@@ -24,3 +24,5 @@ node server.js
 直接在浏览器中打开index.html文件
 
 或者使用VS Code的Live Server插件运行
+
+全员提交通过

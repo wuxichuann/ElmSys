@@ -1,0 +1,5 @@
+Flask==2.3.3
+SQLAlchemy==2.0.29
+Flask-SQLAlchemy==3.1.1
+PyMySQL==1.1.0 # 或者 mysql-connector-python
+Flask-CORS==4.0.0

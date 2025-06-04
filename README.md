@@ -26,3 +26,40 @@ node server.js
 或者使用VS Code的Live Server插件运行
 
 全员提交通过
+
+///////
+user_frontend/
+│
+├── app/                      # 主应用目录
+│   ├── __init__.py           # 应用初始化
+│   ├── main.py               # 主应用入口
+│   ├── models/               # 数据模型
+│   │   ├── user.py           # 用户模型
+│   │   ├── restaurant.py     # 商家模型
+│   │   ├── order.py          # 订单模型
+│   │   └── dish.py           # 菜品模型
+│   ├── routes/               # 路由/控制器
+│   │   ├── auth.py           # 认证相关路由
+│   │   ├── restaurants.py    # 商家相关路由
+│   │   ├── orders.py         # 订单相关路由
+│   │   └── __init__.py
+│   ├── services/             # 业务逻辑层
+│   │   ├── auth_service.py   # 认证服务
+│   │   ├── order_service.py  # 订单服务
+│   │   └── __init__.py
+│   ├── static/               # 静态文件(如果包含简单前端)
+│   │   ├── css/
+│   │   ├── js/
+│   │   └── images/
+│   ├── templates/            # 模板文件(如果使用服务端渲染)
+│   │   ├── base.html
+│   │   ├── login.html
+│   │   └── ...
+│   └── utils/                # 工具函数
+│       ├── jwt_utils.py       # JWT工具
+│       ├── response.py        # 响应格式化
+│       └── __init__.py
+│
+├── config.py                 # 配置文件
+├── requirements.txt          # 依赖列表
+└── README.md                 # 项目说明

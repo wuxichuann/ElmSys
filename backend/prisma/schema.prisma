@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model menu_items {
+  item_id       Int           @id @default(autoincrement())
+  restaurant_id Int
+  item_name     String        @db.VarChar(100)
+  description   String?       @db.Text
+  price         Decimal       @db.Decimal(10, 2)
+  category      String?       @db.VarChar(50)
+  image_url     String?       @db.VarChar(255)
+  is_available  Boolean?      @default(true)
+  created_at    DateTime?     @default(now()) @db.Timestamp(0)
+  updated_at    DateTime?     @default(now()) @db.Timestamp(0)
+  restaurants   restaurants   @relation(fields: [restaurant_id], references: [restaurant_id], onDelete: Cascade, map: "menu_items_ibfk_1")
+  order_items   order_items[]
+
+  @@index([restaurant_id], map: "restaurant_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model order_items {
+  order_item_id     Int        @id @default(autoincrement())
+  order_id          Int
+  item_id           Int
+  quantity          Int        @default(1)
+  price_at_purchase Decimal    @db.Decimal(10, 2)
+  subtotal          Decimal    @db.Decimal(10, 2)
+  orders            orders     @relation(fields: [order_id], references: [order_id], onDelete: Cascade, map: "order_items_ibfk_1")
+  menu_items        menu_items @relation(fields: [item_id], references: [item_id], map: "order_items_ibfk_2")
+
+  @@index([item_id], map: "item_id")
+  @@index([order_id], map: "order_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model orders {
+  order_id                        Int                   @id @default(autoincrement())
+  customer_id                     Int
+  restaurant_id                   Int
+  courier_id                      Int?
+  delivery_address                String                @db.Text
+  total_amount                    Decimal               @db.Decimal(10, 2)
+  status                          orders_status
+  payment_method                  String?               @db.VarChar(50)
+  payment_status                  orders_payment_status @default(pending)
+  notes                           String?               @db.Text
+  estimated_delivery_at           DateTime?             @db.Timestamp(0)
+  delivered_at                    DateTime?             @db.Timestamp(0)
+  created_at                      DateTime?             @default(now()) @db.Timestamp(0)
+  updated_at                      DateTime?             @default(now()) @db.Timestamp(0)
+  order_items                     order_items[]
+  users_orders_customer_idTousers users                 @relation("orders_customer_idTousers", fields: [customer_id], references: [user_id], map: "orders_ibfk_1")
+  restaurants                     restaurants           @relation(fields: [restaurant_id], references: [restaurant_id], map: "orders_ibfk_2")
+  users_orders_courier_idTousers  users?                @relation("orders_courier_idTousers", fields: [courier_id], references: [user_id], map: "orders_ibfk_3")
+
+  @@index([courier_id], map: "courier_id")
+  @@index([customer_id], map: "customer_id")
+  @@index([restaurant_id], map: "restaurant_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model restaurants {
+  restaurant_id   Int          @id @default(autoincrement())
+  owner_user_id   Int?
+  restaurant_name String       @db.VarChar(100)
+  description     String?      @db.Text
+  address         String       @db.Text
+  phone_number    String       @db.VarChar(20)
+  logo_url        String?      @db.VarChar(255)
+  opening_hours   String?      @db.VarChar(100)
+  is_active       Boolean?     @default(true)
+  created_at      DateTime?    @default(now()) @db.Timestamp(0)
+  updated_at      DateTime?    @default(now()) @db.Timestamp(0)
+  menu_items      menu_items[]
+  orders          orders[]
+  users           users?       @relation(fields: [owner_user_id], references: [user_id], map: "restaurants_ibfk_1")
+
+  @@index([owner_user_id], map: "owner_user_id")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model users {
+  user_id                          Int             @id @default(autoincrement())
+  username                         String          @unique(map: "username") @db.VarChar(50)
+  password_hash                    String          @db.VarChar(255)
+  email                            String?         @unique(map: "email") @db.VarChar(100)
+  phone_number                     String          @unique(map: "phone_number") @db.VarChar(20)
+  user_type                        users_user_type
+  full_name                        String?         @db.VarChar(100)
+  avatar_url                       String?         @db.VarChar(255)
+  default_address                  String?         @db.Text
+  created_at                       DateTime?       @default(now()) @db.Timestamp(0)
+  updated_at                       DateTime?       @default(now()) @db.Timestamp(0)
+  orders_orders_customer_idTousers orders[]        @relation("orders_customer_idTousers")
+  orders_orders_courier_idTousers  orders[]        @relation("orders_courier_idTousers")
+  restaurants                      restaurants[]
+}
+
+enum users_user_type {
+  customer
+  courier
+  restaurant_admin
+}
+
+enum orders_status {
+  pending_payment
+  placed
+  restaurant_confirmed
+  preparing
+  ready_for_pickup
+  out_for_delivery
+  delivered
+  cancelled
+  refunded
+}
+
+enum orders_payment_status {
+  pending
+  paid
+  failed
+  refunded
+}

@@ -1,0 +1,40 @@
+###
+# @name RegisterUser
+# 用户注册请求
+POST http://localhost:3001/api/auth/register
+Content-Type: application/json
+
+{
+    "username": "vscode_tester",
+    "full_name": "VSCode测试员",
+    "email": "vscode@example.com",
+    "phone_number": "15800002222",
+    "password": "securepass",
+    "user_type": "courier"
+}
+
+### 分隔符，用于区分不同的请求
+
+###
+# @name LoginUser
+# 用户登录请求 (使用用户名)
+POST http://localhost:3001/api/auth/login
+Content-Type: application/json
+
+{
+    "identifier": "vscode_tester",
+    "password": "securepass"
+}
+
+###
+
+###
+# @name LoginUserWithWrongPassword
+# 使用错误密码登录
+POST http://localhost:3001/api/auth/login
+Content-Type: application/json
+
+{
+    "identifier": "vscode_tester",
+    "password": "wrongpassword"
+}

@@ -16,14 +16,6 @@ export interface AuthenticatedRequest extends Request {
 
 /**
  * @description Express中间件，用于验证JWT并保护路由。
- * 该中间件会检查 HTTP 请求头中的 `Authorization` 字段，
- * 期望的格式为 `Bearer <token>`。
- * 1. 如果请求头或令牌不存在，它会返回 401 Unauthorized 错误。
- * 2. 如果存在，它会尝试使用环境变量中的 `JWT_SECRET` 来验证令牌的有效性。
- * 3. 验证成功后，它会将令牌中解码出的用户信息（payload）附加到请求对象 `req` 的 `user` 属性上。
- * 4. 然后调用 `next()` 函数，将控制权传递给下一个中间件或路由处理器。
- * 5. 如果令牌无效（如已过期或签名不匹配），它会返回 401 Unauthorized 错误。
- *
  * @param {AuthenticatedRequest} req - Express 的请求对象，已被扩展以包含 `user` 属性。
  * @param {Response} res - Express 的响应对象，用于向客户端发送响应。
  * @param {NextFunction} next - Express 的 next 函数，用于将请求传递到处理链的下一个环节。

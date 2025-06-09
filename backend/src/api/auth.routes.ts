@@ -22,6 +22,7 @@ import { plainToInstance } from 'class-transformer';
 const router = Router();
 const authService = new AuthService();
 
+// ------------------- 业务逻辑处理程序 (Handlers) -------------------
 
 /**
  * 处理用户注册请求的 RequestHandler。

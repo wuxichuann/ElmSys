@@ -23,8 +23,8 @@ declare global {
  * 2. 如果`globalThis.prisma`不存在，创建新实例 `new PrismaClient()。
  */
 export const prisma = globalThis.prisma || new PrismaClient({
-    // 如果需要，可以在这里添加日志配置等选项
-    // log: ['query', 'info', 'warn', 'error'],
+  // 如果需要，可以在这里添加日志配置等选项
+  // log: ['query', 'info', 'warn', 'error'],
 });
 
 /**

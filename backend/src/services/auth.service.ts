@@ -5,7 +5,7 @@
 
 
 // 导入创建的数据库共享实例
-import { prisma } from '../db/prisma'; 
+import { prisma } from '../db/prisma';
 // 导入数据传输对象(DTO)，用于定义和验证API的输入数据结构。
 import { RegisterDto } from '../dto/auth/register.dto';
 import { LoginDto } from '../dto/auth/login.dto';
@@ -22,9 +22,9 @@ import * as jwt from 'jsonwebtoken';
  * @property {string} type - 用户的类型（例如：'admin'、'user'）。
  */
 interface JwtPayload {
-    userId: number;
-    username: string;
-    type: string;
+  userId: number;
+  username: string;
+  type: string;
 }
 
 /**
@@ -33,25 +33,25 @@ interface JwtPayload {
  * @returns {number} - 对应的总秒数。
  */
 const parseTimeToSeconds = (timeStr: string): number => {
-    const unit = timeStr.charAt(timeStr.length - 1).toLowerCase();
-    const value = parseInt(timeStr.slice(0, -1), 10);
-  
-    if (isNaN(value)) {
-      return 86400; // 默认返回1天的秒数作为安全备用
-    }
-  
-    switch (unit) {
-      case 'd': // 天
-        return value * 24 * 60 * 60;
-      case 'h': // 小时
-        return value * 60 * 60;
-      case 'm': // 分钟
-        return value * 60;
-      case 's': // 秒
-        return value;
-      default: // 如果格式不识别，也返回1天
-        return 86400;
-    }
+  const unit = timeStr.charAt(timeStr.length - 1).toLowerCase();
+  const value = parseInt(timeStr.slice(0, -1), 10);
+
+  if (isNaN(value)) {
+    return 86400; // 默认返回1天的秒数作为安全备用
+  }
+
+  switch (unit) {
+    case 'd': // 天
+      return value * 24 * 60 * 60;
+    case 'h': // 小时
+      return value * 60 * 60;
+    case 'm': // 分钟
+      return value * 60;
+    case 's': // 秒
+      return value;
+    default: // 如果格式不识别，也返回1天
+      return 86400;
+  }
 };
 
 
@@ -140,10 +140,10 @@ export class AuthService {
 
     // 从返回给客户端的用户对象中移除密码哈希。
     const { password_hash, ...userWithoutPassword } = user;
-    
+
     // 3. 登录成功，生成一个新的JWT。
     const token = this.generateToken(userWithoutPassword);
-    
+
     return { user: userWithoutPassword, token };
   }
 
@@ -173,6 +173,6 @@ export class AuthService {
     };
 
     // 使用`jwt.sign`方法生成并签名令牌。
-    return jwt.sign(payload, secret, options );
+    return jwt.sign(payload, secret, options);
   }
 }

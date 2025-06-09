@@ -1,3 +1,8 @@
+### ===================================================
+### 馋了么餐饮服务平台 - API 测试集
+### 使用 VS Code REST Client 插件
+### ===================================================
+
 ###
 # @name RegisterUser
 # 用户注册请求
@@ -13,7 +18,20 @@ Content-Type: application/json
     "user_type": "courier"
 }
 
-### 分隔符，用于区分不同的请求
+###
+# @name RegisterUser
+# 用户注册请求
+POST http://localhost:3001/api/auth/register
+Content-Type: application/json
+
+{
+    "username": "wky",
+    "full_name": "吴开燕",
+    "email": "3418777301@example.com",
+    "phone_number": "18791592176",
+    "password": "571121001",
+    "user_type": "customer"
+}
 
 ###
 # @name LoginUser

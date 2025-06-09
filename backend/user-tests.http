@@ -1,0 +1,147 @@
+### ===================================================
+### 馋了么餐饮服务平台 - API 测试集
+### 使用 VS Code REST Client 插件
+### ===================================================
+
+### 变量定义 (请根据您的设置修改)
+@baseUrl = http://localhost:3001/api
+@jwtToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjYsInVzZXJuYW1lIjoid2t5IiwidHlwZSI6ImN1c3RvbWVyIiwiaWF0IjoxNzQ5NDg0NjEyLCJleHAiOjE3NDk1NzEwMTJ9.r6oLGEjYKSL9B6hs7ZAQY7QBUjhcVKUoHWrKMvE74mo
+### ===================================================
+### Part 1: 核心认证 (获取JWT)
+### @description: 首先运行这个请求，手动复制返回的token到上面的@jwtToken变量中
+### ===================================================
+
+###
+# @name loginRequest
+# 用户登录请求
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+    "identifier": "wky",
+    "password": "571121001"
+}
+
+### 手动操作:
+### 运行上面的 loginRequest 请求后，从右侧的响应窗口中复制 token 的值，
+### 然后粘贴到文件顶部的 @jwtToken = 后面。
+### 例如: @jwtToken = eyJhbGciOiJI...
+
+### ===================================================
+### Part 2: 餐厅浏览与搜索 (公开接口，无需认证)
+### ===================================================
+
+### 2.1 获取所有餐厅列表
+# @description: 测试基础的餐厅列表获取功能
+GET {{baseUrl}}/restaurants
+
+### 2.2 根据ID获取单个餐厅详情 (包括菜单)
+# @description: 测试获取指定餐厅的详细信息及其所有可售菜品
+# 预期：返回ID为1的 "王五的美味快餐" 的信息和菜单
+GET {{baseUrl}}/restaurants/1
+
+### 2.3 测试获取一个不存在的餐厅
+# @description: 预期返回 404 Not Found
+GET {{baseUrl}}/restaurants/999
+
+### 2.4 测试带关键词的搜索功能
+# @description: 搜索名称或描述中包含“快餐”的餐厅
+GET {{baseUrl}}/restaurants?keyword=快餐
+
+### 2.5 测试带分类的搜索功能
+# @description: 搜索包含“沙拉”这个菜品分类的餐厅
+# 预期：返回 "王五的健康轻食"
+GET {{baseUrl}}/restaurants?category=沙拉
+
+### 2.6 测试带分页的搜索功能
+# @description: 每页显示1个，获取第2页
+# 预期：根据您的数据，可能会返回 "王五的健康轻食"
+GET {{baseUrl}}/restaurants?page=2&pageSize=1
+
+### 2.7 组合搜索 (关键词 + 分类)
+# @description: 搜索包含“饮品”分类且描述中带“健康”的餐厅
+# 预期：返回 "王五的健康轻食"
+GET {{baseUrl}}/restaurants?keyword=健康&category=饮品
+
+
+### ===================================================
+### Part 3: 用户下单 (核心功能，需要认证)
+### ===================================================
+
+### 3.1 成功下单
+# @description: 模拟用户 "wky" (ID:6) 从 "王五的美味快餐" (ID:1)
+#              点一份 "宫保鸡丁饭" (ID:1) 和两份 "可口可乐" (ID:2)
+# 前提: 必须先运行登录请求，并把获取到的token填入顶部的 @jwtToken
+POST {{baseUrl}}/orders
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+    "restaurantId": 1,
+    "deliveryAddress": "西安",
+    "items": [
+        {
+            "itemId": 1,
+            "quantity": 1
+        },
+        {
+            "itemId": 2,
+            "quantity": 2
+        }
+    ],
+    "notes": "麻烦快点送，谢谢！"
+}
+
+### 3.2 失败下单 - 菜品不属于该餐厅
+# @description: 尝试从餐厅1下单，但点的菜(ID:3 '鸡胸肉沙拉')属于餐厅2
+# 预期: 返回 500 或 400 错误，并提示 "订单中包含无效...的菜品"
+POST {{baseUrl}}/orders
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+    "restaurantId": 1,
+    "deliveryAddress": "某个地址",
+    "items": [
+        {
+            "itemId": 3,
+            "quantity": 1
+        }
+    ]
+}
+
+### 3.3 失败下单 - 未提供认证令牌
+# @description: 不带 Authorization 头请求下单接口
+# 预期: 返回 401 Unauthorized 错误
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+    "restaurantId": 1,
+    "deliveryAddress": "某个地址",
+    "items": [
+        {
+            "itemId": 1,
+            "quantity": 1
+        }
+    ]
+}
+
+
+### 3.4 失败下单 - 请求体数据格式错误
+# @description: 比如 quantity 不是数字
+# 预期: 返回 400 Bad Request 错误，并提示 "请求数据格式错误"
+POST {{baseUrl}}/orders
+Content-Type: application/json
+Authorization: Bearer {{jwtToken}}
+
+{
+    "restaurantId": 1,
+    "deliveryAddress": "某个地址",
+    "items": [
+        {
+            "itemId": 1,
+            "quantity": "one"
+        }
+    ]
+}

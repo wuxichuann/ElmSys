@@ -1,8 +1,9 @@
 // src/stores/auth.ts
 import { defineStore } from 'pinia';
-import { authApi } from '../api';
+// import { authApi } from '../api';
 import router from '../router';
 import { LoginResponse, User, RegisterRestaurantDto, UserType } from '../types/auth'; 
+import { User, LoginDto, RegisterDto, RegisterRestaurantDto } from '../types/auth';
 
 // 定义 AuthState 接口来明确 state 的类型
 // 确保 User 接口的定义也正确，包含 user_type

@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<!-- <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useMenuStore } from '../stores/menu';
 import { MenuItem, CreateMenuItemDto, UpdateMenuItemDto } from '../types/menu';
@@ -223,5 +223,176 @@ h2 {
 
 .action-button.delete-button:hover {
   background-color: #c82333;
+}
+</style> -->
+<!-- src/views/MenuItemManagementView.vue -->
+<template>
+  <div class="p-6 bg-gray-50 min-h-screen">
+    <h1 class="text-3xl font-extrabold text-gray-900 mb-8 text-center">菜品管理</h1>
+
+    <div class="flex justify-between items-center mb-6">
+      <button @click="openAddModal"
+        class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-200 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-green-500">
+        <i class="fas fa-plus mr-2"></i> 新增菜品
+      </button>
+    </div>
+
+    <div v-if="menuStore.loading" class="text-center py-8">
+      <p class="text-lg text-gray-600">加载菜品中...</p>
+      <!-- 可以添加一个加载动画 -->
+    </div>
+
+    <div v-else-if="menuStore.error" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative text-center" role="alert">
+      <p>{{ menuStore.error }}</p>
+      <button @click="menuStore.fetchMenuItems" class="mt-2 text-blue-600 hover:underline">点击重试</button>
+    </div>
+
+    <div v-else-if="menuStore.menuItems.length === 0" class="text-center py-12 bg-white rounded-lg shadow-sm">
+      <p class="text-xl text-gray-500">您还没有添加任何菜品，赶快添加第一个吧！</p>
+      <button @click="openAddModal"
+        class="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        添加菜品
+      </button>
+    </div>
+
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div v-for="item in menuStore.menuItems" :key="item.item_id"
+        class="bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300 overflow-hidden flex flex-col">
+        <img :src="item.image_url || 'https://placehold.co/400x200/cccccc/333333?text=No+Image'"
+             alt="Dish Image" class="w-full h-48 object-cover">
+        <div class="p-6 flex flex-col flex-grow">
+          <h3 class="text-xl font-semibold text-gray-800 mb-2">{{ item.item_name }}</h3>
+          <p class="text-gray-600 text-sm mb-3 flex-grow">{{ item.description }}</p>
+          <div class="flex justify-between items-center mt-auto pt-4 border-t border-gray-100">
+            <span class="text-2xl font-bold text-red-600">¥{{ item.price.toFixed(2) }}</span>
+            <span :class="['px-3 py-1 rounded-full text-xs font-semibold', item.is_available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800']">
+              {{ item.is_available ? '可售' : '已下架' }}
+            </span>
+          </div>
+          <div class="flex justify-end gap-3 mt-4">
+            <button @click="openEditModal(item)"
+              class="bg-blue-500 hover:bg-blue-600 text-white text-sm font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-200">
+              <i class="fas fa-edit mr-1"></i> 编辑
+            </button>
+            <button @click="confirmDelete(item)"
+              class="bg-red-500 hover:bg-red-600 text-white text-sm font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline transition duration-200">
+              <i class="fas fa-trash-alt mr-1"></i> 删除
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 菜品表单弹窗 -->
+    <MenuItemFormModal
+      :is-visible="isModalVisible"
+      :menu-item="selectedMenuItem"
+      @close="closeModal"
+    />
+
+    <!-- 删除确认弹窗 -->
+    <div v-if="isDeleteConfirmVisible" class="modal-overlay fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center p-4 z-20">
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-sm p-6 relative">
+        <h3 class="text-xl font-semibold text-gray-800 mb-4">确认删除</h3>
+        <p class="text-gray-700 mb-6">您确定要删除菜品 "{{ deleteCandidate?.item_name }}" 吗？此操作不可撤销。</p>
+        <div class="flex justify-end gap-3">
+          <button @click="cancelDelete"
+            class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-200">
+            取消
+          </button>
+          <button @click="executeDelete"
+            class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline transition duration-200"
+            :disabled="menuStore.loading">
+            {{ menuStore.loading ? '删除中...' : '确认删除' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script lang="ts">
+import { defineComponent, onMounted, ref } from 'vue';
+import { useMenuStore } from '../stores/menu';
+import MenuItemFormModal from '../components/menu/MenuItemFormModal.vue';
+import { MenuItem } from '../types/menu'; // 导入 MenuItem 类型
+
+export default defineComponent({
+  name: 'MenuItemManagementView',
+  components: {
+    MenuItemFormModal,
+  },
+  setup() {
+    const menuStore = useMenuStore();
+    const isModalVisible = ref(false);
+    const selectedMenuItem = ref<MenuItem | null>(null); // 用于编辑时传入菜品数据
+
+    const isDeleteConfirmVisible = ref(false);
+    const deleteCandidate = ref<MenuItem | null>(null); // 待删除的菜品
+
+    onMounted(() => {
+      menuStore.fetchMenuItems(); // 组件挂载时获取菜品列表
+    });
+
+    const openAddModal = () => {
+      selectedMenuItem.value = null; // 清空，表示新增模式
+      isModalVisible.value = true;
+    };
+
+    const openEditModal = (item: MenuItem) => {
+      selectedMenuItem.value = item; // 传入要编辑的菜品
+      isModalVisible.value = true;
+    };
+
+    const closeModal = () => {
+      isModalVisible.value = false;
+      selectedMenuItem.value = null; // 关闭后清除选中项
+      // 重新获取数据以确保列表是最新的，或者让 store 自己处理更新
+      menuStore.fetchMenuItems();
+    };
+
+    const confirmDelete = (item: MenuItem) => {
+      deleteCandidate.value = item;
+      isDeleteConfirmVisible.value = true;
+    };
+
+    const cancelDelete = () => {
+      isDeleteConfirmVisible.value = false;
+      deleteCandidate.value = null;
+    };
+
+    const executeDelete = async () => {
+      if (deleteCandidate.value) {
+        try {
+          await menuStore.deleteMenuItem(deleteCandidate.value.item_id);
+          cancelDelete(); // 删除成功后关闭确认弹窗
+        } catch (error) {
+          console.error('删除失败:', error);
+          // 错误信息会通过 store.error 显示
+        }
+      }
+    };
+
+    return {
+      menuStore,
+      isModalVisible,
+      selectedMenuItem,
+      isDeleteConfirmVisible,
+      deleteCandidate,
+      openAddModal,
+      openEditModal,
+      closeModal,
+      confirmDelete,
+      cancelDelete,
+      executeDelete,
+    };
+  },
+});
+</script>
+
+<style scoped>
+/* 可以在这里添加一些额外的样式 */
+.modal-overlay {
+  background-color: rgba(0, 0, 0, 0.5); /* 半透明背景 */
 }
 </style>

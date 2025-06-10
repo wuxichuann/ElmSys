@@ -164,7 +164,7 @@ const updateOrderStatusHandler: RequestHandler = async (req: AuthenticatedReques
 
 // --- 骑手端 Handlers ---
 /**
- * 处理骑手获取可接订单列表的请求。
+ * @description 处理骑手获取可接订单列表（订单广场）的请求。
  */
 const getAvailableOrdersHandler: RequestHandler = async (req, res, next) => {
     try {
@@ -176,7 +176,7 @@ const getAvailableOrdersHandler: RequestHandler = async (req, res, next) => {
 };
 
 /**
- * 处理骑手接单（抢单）的请求。
+ * @description 处理骑手接单（抢单）的请求。
  */
 const acceptOrderHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
@@ -195,6 +195,47 @@ const acceptOrderHandler: RequestHandler = async (req: AuthenticatedRequest, res
         res.status(200).json({ message: '抢单成功！', order: updatedOrder });
     } catch (error) {
         // 4. 传递业务逻辑层抛出的错误（如抢单失败）
+        next(error);
+    }
+};
+
+/**
+ * @description 处理骑手获取“配送中”任务列表的请求。
+ */
+const getRiderInProgressTasksHandler: RequestHandler = async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const tasks = await orderService.getInProgressTasksForRider(req.user.userId);
+        res.status(200).json(tasks);
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * @description   处理骑手获取“历史”任务列表的请求。
+ */
+const getRiderHistoryTasksHandler: RequestHandler = async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const tasks = await orderService.getHistoryTasksForRider(req.user.userId);
+        res.status(200).json(tasks);
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * @description 处理骑手确认送达的请求。
+ */
+const deliverOrderHandler: RequestHandler = async (req: AuthenticatedRequest, res, next) => {
+    try {
+        const orderId = parseInt(req.params.id, 10);
+        if (isNaN(orderId)) {
+            res.status(400).json({ message: '无效的订单ID格式' });
+            return;
+        }
+        await orderService.deliverOrder(req.user.userId, orderId);
+        res.status(200).json({ message: '订单已成功送达' });
+    } catch (error) {
         next(error);
     }
 };
@@ -261,40 +302,49 @@ router.patch('/:id/confirm', ...isRestaurantAdmin, confirmOrderHandler);
  */
 router.patch('/:id/status', ...isRestaurantAdmin, updateOrderStatusHandler);
 
-// --- 骑手订单管理路由 ---
+
+// --- 骑手订单与任务管理路由 ---
+const isCourier = [authMiddleware, checkRole(UserType.COURIER)];
+
 /**
  * @route   GET /api/orders/rider/available
- * @group   Orders - 骑手订单管理
- * @description 骑手获取可接取的订单列表（订单广场）。
+ * @group   Orders - 骑手任务管理
+ * @description (板块1) 骑手获取可接取的订单列表（订单广场）。
  * @access  Private (Courier)
- * @returns {Array<object>} 200 - 可接订单列表。
- * @returns {object} 403 - 权限不足。
  */
-router.get(
-    '/rider/available',
-    authMiddleware,
-    checkRole(UserType.COURIER),
-    getAvailableOrdersHandler
-);
+router.get('/rider/available', ...isCourier, getAvailableOrdersHandler);
+
+/**
+ * @route   GET /api/orders/rider/in-progress
+ * @group   Orders - 骑手任务管理
+ * @description (板块2) 骑手获取自己“配送中”的任务列表。
+ * @access  Private (Courier)
+ */
+router.get('/rider/in-progress', ...isCourier, getRiderInProgressTasksHandler);
+
+/**
+ * @route   GET /api/orders/rider/history
+ * @group   Orders - 骑手任务管理
+ * @description (板块3) 骑手获取自己已完成的历史任务列表。
+ * @access  Private (Courier)
+ */
+router.get('/rider/history', ...isCourier, getRiderHistoryTasksHandler);
 
 /**
  * @route   PATCH /api/orders/:id/accept
- * @group   Orders - 骑手订单管理
+ * @group   Orders - 骑手任务管理
  * @description 骑手接取（抢）一个订单。
  * @access  Private (Courier)
- * @param {number} id.path.required - 要接取的订单ID。
- * @returns {object} 200 - 抢单成功，返回更新后的订单信息。
- * @returns {object} 400 - 订单ID无效。
- * @returns {object} 403 - 权限不足。
- * @returns {object} 409 - 抢单失败（由全局错误处理器处理）。
  */
-router.patch(
-    '/:id/accept',
-    authMiddleware,
-    checkRole(UserType.COURIER),
-    acceptOrderHandler
-);
+router.patch('/:id/accept', ...isCourier, acceptOrderHandler);
 
+/**
+ * @route   PATCH /api/orders/:id/deliver
+ * @group   Orders - 骑手任务管理
+ * @description 骑手确认送达，将订单状态更新为 'delivered'。
+ * @access  Private (Courier)
+ */
+router.patch('/:id/deliver', ...isCourier, deliverOrderHandler);
 
 
 export default router;

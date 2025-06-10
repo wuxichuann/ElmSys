@@ -475,27 +475,45 @@ export class OrderService {
                 }
             });
 
-            // （3）触发 WebSocket 通知
+            // （3）触发 WebSocket 通知给顾客
             socketService.emitToUser(updatedOrder.customer_id, 'order_status_update', updatedOrder);
-
-            // 如果状态变为“待取餐”，需要通知骑手
+            // 如果状态变为“待取餐”，需要广播给所有骑手
             if (newStatus === 'ready_for_pickup') {
-                // 如果此时已经有骑手被系统预分配（虽然我们的流程里没有，但可以做健壮性设计）
-                if (updatedOrder.courier_id) {
-                    socketService.emitToUser(updatedOrder.courier_id, 'order_status_update', { message: `订单 #${orderId} 已备好，请尽快取餐！` });
-                }
-                // 更重要的：广播给所有骑手，这个订单现在可以被抢了。
-                // 注意：我们的 getAvailableOrdersForRider 查找的是 'restaurant_confirmed' 状态，
-                // 应该改为查找 'ready_for_pickup' 状态，这样逻辑才闭环。
-                // 假设已经修改，这里广播事件。
+
+                // 【核心修正】在这里重新查询订单，并使用为骑手端定义的 select 结构
                 const fullOrderForRider = await tx.orders.findUnique({
                     where: { order_id: orderId },
-                    select: { /* ... getAvailableOrdersForRider 中定义的结构 ... */ }
+                    // 将 getAvailableOrdersForRider 中的 select 结构复制到这里
+                    select: {
+                        order_id: true,
+                        total_amount: true,
+                        delivery_address: true,
+                        notes: true,
+                        created_at: true,
+                        updated_at: true,
+                        restaurants: {
+                            select: {
+                                restaurant_name: true,
+                                address: true,
+                                phone_number: true,
+                            }
+                        },
+                        // 如果 getAvailableOrdersForRider 也返回了用户信息，这里也要加上
+                        users_orders_customer_idTousers: {
+                            select: {
+                                full_name: true,
+                                phone_number: true
+                            }
+                        }
+                    }
                 });
-                socketService.broadcast('new_available_order', fullOrderForRider);
+
+                if (fullOrderForRider) {
+                    socketService.broadcast('new_available_order', fullOrderForRider);
+                }
             }
 
-            return updatedOrder;
+            return updatedOrder; // 返回给商家的更新后的订单
         });
     }
 
@@ -504,7 +522,7 @@ export class OrderService {
 
     // --------------骑手的订单处理--------------
     /**
-     * @description 获取所有可供骑手接取的订单。
+     * @description 获取所有可供骑手接取的订单。【用于“订单广场”页】
      * 实际业务中，可以根据地理位置、骑手评分等进行筛选，这里做简化处理。
      * @returns 返回可接订单列表，包含详细的取餐和送餐信息。
      */
@@ -512,10 +530,8 @@ export class OrderService {
         return prisma.orders.findMany({
             // 1.筛选条件：
             where: {
-                // 在实际业务中，商家确认后可能还有备餐(preparing)阶段。
-                // 为简化流程，我们查找 'restaurant_confirmed' 状态的订单。
-                // 更完善的流程应查找 'ready_for_pickup' 状态。
-                status: 'restaurant_confirmed',
+                // 此处状态应改为 'ready_for_pickup'，以匹配商家“餐品已备好”的最终状态。
+                status: 'ready_for_pickup',
                 courier_id: null, // 关键条件：订单尚未被任何骑手接取
             },
             // 2.前端展示：
@@ -549,7 +565,7 @@ export class OrderService {
     }
 
     /**
-     * @description 骑手接取订单，一个原子操作以防并发问题。
+     * @description 骑手接取订单，将订单状态从“ready_for_pickup”改为“out_for_pickup”
      * @param courierId - 骑手用户ID，从JWT中获取。
      * @param orderId - 要接取的订单ID。
      * @returns 返回更新后的订单信息。
@@ -577,7 +593,7 @@ export class OrderService {
                 (error as any).statusCode = 404;
                 throw error;
             }
-            if (orderToAccept.status !== 'restaurant_confirmed') {
+            if (orderToAccept.status !== 'ready_for_pickup') {
                 const error = new Error(`无法接单，订单当前状态为: ${orderToAccept.status}`);
                 (error as any).statusCode = 409;
                 throw error;
@@ -627,4 +643,105 @@ export class OrderService {
             return updatedOrder;
         });
     }
+
+
+    /**
+     * @description 获取指定骑手所有“配送中”的任务。【用于“个人订单任务”页的“配送中”订单任务页】
+     * @param {number} courierId - 骑手的用户ID。
+     * @returns {Promise<any[]>} 返回该骑手所有 'out_for_delivery' 状态的订单列表。
+     */
+    public async getInProgressTasksForRider(courierId: number) {
+        return prisma.orders.findMany({
+            where: {
+                courier_id: courierId,
+                status: 'out_for_delivery',
+            },
+            select: {
+                // 返回为“任务详情卡片”优化的数据结构
+                order_id: true,
+                status: true,
+                delivery_address: true,
+                notes: true,
+                estimated_delivery_at: true,
+                restaurants: { select: { restaurant_name: true, address: true, phone_number: true } },
+                users_orders_customer_idTousers: { select: { full_name: true, phone_number: true } },
+            },
+            orderBy: {
+                estimated_delivery_at: 'asc', // 预计送达时间最早的排在前面，提醒优先配送
+            },
+        });
+    }
+
+    /**
+     * @description 获取指定骑手所有已完成的任务。【用于“个人订单任务”页的“历史订单”任务页】
+     * @param {number} courierId - 骑手的用户ID。
+     * @returns {Promise<any[]>} 返回该骑手所有 'delivered' 状态的订单列表。
+     */
+    public async getHistoryTasksForRider(courierId: number) {
+        return prisma.orders.findMany({
+            where: {
+                courier_id: courierId,
+                status: 'delivered',
+            },
+            select: {
+                // 历史任务返回精简信息
+                order_id: true,
+                status: true,
+                total_amount: true,
+                delivered_at: true,
+                restaurants: { select: { restaurant_name: true } },
+                // delivery_fee: true, // 如果有配送费字段
+            },
+            orderBy: {
+                delivered_at: 'desc', // 最近完成的在最前面
+            },
+        });
+    }
+
+    /**
+     * @description 骑手确认送达 ('out_for_delivery' -> 'delivered')。【用于“确认送达”】
+     * @param {number} courierId - 骑手的用户ID，用于权限校验。
+     * @param {number} orderId - 要更新的订单ID。
+     * @returns {Promise<any>} 返回更新后的订单对象。
+     */
+    public async deliverOrder(courierId: number, orderId: number) {
+        // 使用 updateMany 实现原子性的“校验并更新”
+        const result = await prisma.orders.updateMany({
+            where: {
+                order_id: orderId,
+                courier_id: courierId, // 权限校验：骑手只能更新自己的订单
+                status: 'out_for_delivery',
+            },
+            data: {
+                status: 'delivered',
+                delivered_at: new Date(), // 记录实际送达时间
+            },
+        });
+
+        if (result.count === 0) {
+            const error = new Error('操作失败：订单未找到、状态不正确或您无权操作。');
+            (error as any).statusCode = 404;
+            throw error;
+        }
+
+        const finalOrder = await prisma.orders.findUnique({
+            where: { order_id: orderId },
+            // 返回完整信息，用于触发通知
+            select: {
+                order_id: true, status: true, customer_id: true,
+                restaurants: { select: { owner_user_id: true } }
+            }
+        });
+
+        if (finalOrder) {
+            // 触发 WebSocket 通知顾客和商家，订单已完成
+            socketService.emitToUser(finalOrder.customer_id, 'order_status_update', finalOrder);
+            if (finalOrder.restaurants?.owner_user_id) {
+                socketService.emitToUser(finalOrder.restaurants.owner_user_id, 'order_status_update', finalOrder);
+            }
+        }
+
+        return finalOrder;
+    }
+
 }

@@ -1,0 +1,224 @@
+### =================================================================
+### "馋了么" 后端API 全流程测试 (v3 - 含实时化验证)
+### 
+### 测试流程:
+### 1. 依次注册并登录三个角色：商家、顾客、骑手。
+### 2. 顾客浏览餐厅并下单。
+###    >> 观察后端控制台，应有日志显示 'new_order' 事件被触发。
+### 3. 商家获取新订单并确认接单。
+###    >> 观察后端控制台，应有 'order_status_update' 和 'new_available_order' 事件日志。
+### 4. 骑手查看订单广场并抢单。
+###    >> 观察后端控制台，应有两条 'order_status_update' 事件日志（给顾客和商家）。
+### =================================================================
+
+# --- 全局变量定义 ---
+@baseUrl = http://localhost:3001/api
+@merchant_token = 
+@customer_token = 
+@rider_token = 
+@new_order_id = 
+@restaurant_id = 1
+@menu_item_id_1 = 1
+@menu_item_id_2 = 2
+
+#################################################################
+# 阶段 1: 认证 (Authentication)
+#################################################################
+
+### (1.1) 商家注册 (专用接口)
+# @name merchantRegister
+POST {{baseUrl}}/auth/register/restaurant
+Content-Type: application/json
+
+{
+    "user": {
+        "username": "laoban_02",
+        "password": "password_laoban_02",
+        "email": "laoban02@test.com",
+        "phone_number": "18800000012",
+        "full_name": "老板二号",
+        "user_type": "restaurant_admin"
+    },
+    "restaurant": {
+        "restaurant_name": "老板二号的烧烤摊",
+        "description": "滋滋冒油，香飘十里",
+        "address": "虚拟美食街202号",
+        "phone_number": "010-33334444",
+        "opening_hours": "19:00-03:00"
+    }
+}
+
+### (1.2) 商家登录
+# @name merchantLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+    "identifier": "laoban_01",
+    "password": "password_laoban_01"
+}
+
+###
+# 自动捕获商家登录后的token
+@merchant_token = {{merchantLogin.response.body.token}}
+
+
+### (1.3) 顾客注册 (通用接口)
+# @name customerRegister
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+    "username": "xiaohong",
+    "password": "password_xiaohong",
+    "email": "xiaohong@test.com",
+    "phone_number": "18800000013",
+    "full_name": "肖红",
+    "user_type": "customer"
+}
+
+### (1.4) 顾客登录
+# @name customerLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+    "identifier": "xiaohong",
+    "password": "password_xiaohong"
+}
+
+###
+# 自动捕获顾客登录后的token
+@customer_token = {{customerLogin.response.body.token}}
+
+
+### (1.5) 骑手注册 (通用接口)
+# @name riderRegister
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+    "username": "qishou_shandian",
+    "password": "password_qishou_shandian",
+    "email": "shandian@test.com",
+    "phone_number": "18800000014",
+    "full_name": "骑手闪电",
+    "user_type": "courier"
+}
+
+### (1.6) 骑手登录
+# @name riderLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+    "identifier": "qishou_shandian",
+    "password": "password_qishou_shandian"
+}
+
+###
+# 自动捕获骑手登录后的token
+@rider_token = {{riderLogin.response.body.token}}
+
+
+#################################################################
+# 阶段 2 & 3: 核心业务流程与实时事件验证
+#################################################################
+
+### (2.1) [顾客] 浏览餐厅
+# 无需token的公开接口
+GET {{baseUrl}}/restaurants
+
+### (2.2) [顾客] 查看餐厅详情 (ID=1)
+GET {{baseUrl}}/restaurants/{{restaurant_id}}
+
+### (2.3) [顾客] 下单
+# @name createOrder
+POST {{baseUrl}}/orders
+Authorization: Bearer {{customer_token}}
+Content-Type: application/json
+
+{
+    "restaurantId": 3,
+    "deliveryAddress": "星天苑A座，请放前台",
+    "items": [
+        { "itemId": 5, "quantity": 1 },
+        { "itemId": 6, "quantity": 1 }
+    ],
+    "notes": "不要洋葱，谢谢"
+}
+
+### (2.3) [顾客] 下单
+# @name createOrder
+POST {{baseUrl}}/orders
+Authorization: Bearer {{customer_token}}
+Content-Type: application/json
+
+{
+    "restaurantId": {{restaurant_id}},
+    "deliveryAddress": "未来科技城A座8楼，请放前台",
+    "items": [
+        { "itemId": {{menu_item_id_1}}, "quantity": 1 },
+        { "itemId": {{menu_item_id_2}}, "quantity": 1 }
+    ],
+    "notes": "不要洋葱，谢谢"
+}
+
+###
+# 自动捕获新订单ID
+@new_order_id = {{createOrder.response.body.order.order_id}}
+
+# ✅ **验证点 1**:
+# 执行此请求后，立即查看后端服务的控制台（运行`npm run dev`的那个终端）。
+# 你应该能看到类似下面的日志：
+# [Socket] Emitting event 'new_order' to user [商家用户ID] ...
+
+
+### (2.4) [商家] 查看新订单列表
+# 验证新创建的订单是否出现在列表中
+GET {{baseUrl}}/orders/restaurant/new
+Authorization: Bearer {{merchant_token}}
+
+### (2.5) [商家] 确认接单
+# @name confirmOrder
+PATCH {{baseUrl}}/orders/{{new_order_id}}/confirm
+Authorization: Bearer {{merchant_token}}
+
+# ✅ **验证点 2**:
+# 执行此请求后，查看后端控制台。
+# 你应该能看到两条Socket事件日志：
+# 1. [Socket] Emitting event 'order_status_update' to user [顾客用户ID] ...
+# 2. [Socket] Broadcasting event 'new_available_order' to all clients
+
+
+### (2.6) [骑手] 查看可接订单（订单广场）
+# 验证刚刚商家确认的订单是否出现在这里
+GET {{baseUrl}}/orders/rider/available
+Authorization: Bearer {{rider_token}}
+
+
+### (2.7) [骑手] 接单（抢单）
+# @name acceptOrder
+PATCH {{baseUrl}}/orders/{{new_order_id}}/accept
+Authorization: Bearer {{rider_token}}
+
+# ✅ **验证点 3**:
+# 执行此请求后，查看后端控制台。
+# 你应该能看到两条Socket事件日志：
+# 1. [Socket] Emitting event 'order_status_update' to user [顾客用户ID] ...
+# 2. [Socket] Emitting event 'order_status_update' to user [商家用户ID] ...
+
+
+#################################################################
+# 补充测试：异常与权限
+#################################################################
+
+### (3.1) [异常] 另一个骑手尝试抢同一个已被接的单
+# 应该会失败，并返回 409 Conflict
+PATCH {{baseUrl}}/orders/{{new_order_id}}/accept
+Authorization: Bearer {{rider_token}} # 可以用同一个骑手或另一个骑手的token
+
+### (3.2) [权限] 顾客尝试访问商家接口
+# 应该会失败，并返回 403 Forbidden
+GET {{baseUrl}}/orders/restaurant/new
+Authorization: Bearer {{customer_token}}

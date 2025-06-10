@@ -1,0 +1,58 @@
+### ===================================================
+### 馋了么餐饮服务平台 - API 测试集
+### 使用 VS Code REST Client 插件
+### ===================================================
+
+###
+# @name RegisterUser
+# 用户注册请求
+POST http://localhost:3001/api/auth/register
+Content-Type: application/json
+
+{
+    "username": "vscode_tester",
+    "full_name": "VSCode测试员",
+    "email": "vscode@example.com",
+    "phone_number": "15800002222",
+    "password": "securepass",
+    "user_type": "courier"
+}
+
+###
+# @name RegisterUser
+# 用户注册请求
+POST http://localhost:3001/api/auth/register
+Content-Type: application/json
+
+{
+    "username": "wky",
+    "full_name": "吴开燕",
+    "email": "3418777301@example.com",
+    "phone_number": "18791592176",
+    "password": "571121001",
+    "user_type": "customer"
+}
+
+###
+# @name LoginUser
+# 用户登录请求 (使用用户名)
+POST http://localhost:3001/api/auth/login
+Content-Type: application/json
+
+{
+    "identifier": "vscode_tester",
+    "password": "securepass"
+}
+
+###
+
+###
+# @name LoginUserWithWrongPassword
+# 使用错误密码登录
+POST http://localhost:3001/api/auth/login
+Content-Type: application/json
+
+{
+    "identifier": "vscode_tester",
+    "password": "wrongpassword"
+}

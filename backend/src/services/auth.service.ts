@@ -5,7 +5,7 @@
 
 
 // 导入创建的数据库共享实例
-import { prisma } from '../db/prisma'; 
+import { prisma } from '../db/prisma';
 // 导入数据传输对象(DTO)，用于定义和验证API的输入数据结构。
 import { RegisterDto } from '../dto/auth/register.dto';
 import { LoginDto } from '../dto/auth/login.dto';
@@ -13,6 +13,8 @@ import { LoginDto } from '../dto/auth/login.dto';
 import * as bcrypt from 'bcrypt';
 // 导入 jsonwebtoken 库，用于创建和验证JWT。
 import * as jwt from 'jsonwebtoken';
+import { RegisterRestaurantDto } from '../dto/auth/register-restaurant.dto';
+import { UserType } from '../constants/user-type.enum';
 
 /**
  * @interface JwtPayload
@@ -20,11 +22,13 @@ import * as jwt from 'jsonwebtoken';
  * @property {number} userId - 用户的唯一标识符。
  * @property {string} username - 用户的用户名。
  * @property {string} type - 用户的类型（例如：'admin'、'user'）。
+ * @property {number} [restaurantId] - (可选) 如果用户类型是 'restaurant_admin'，则此字段存在，表示其管理的餐厅ID。
  */
 interface JwtPayload {
-    userId: number;
-    username: string;
-    type: string;
+  userId: number;
+  username: string;
+  type: string;
+  restaurantId?: number;
 }
 
 /**
@@ -33,25 +37,25 @@ interface JwtPayload {
  * @returns {number} - 对应的总秒数。
  */
 const parseTimeToSeconds = (timeStr: string): number => {
-    const unit = timeStr.charAt(timeStr.length - 1).toLowerCase();
-    const value = parseInt(timeStr.slice(0, -1), 10);
-  
-    if (isNaN(value)) {
-      return 86400; // 默认返回1天的秒数作为安全备用
-    }
-  
-    switch (unit) {
-      case 'd': // 天
-        return value * 24 * 60 * 60;
-      case 'h': // 小时
-        return value * 60 * 60;
-      case 'm': // 分钟
-        return value * 60;
-      case 's': // 秒
-        return value;
-      default: // 如果格式不识别，也返回1天
-        return 86400;
-    }
+  const unit = timeStr.charAt(timeStr.length - 1).toLowerCase();
+  const value = parseInt(timeStr.slice(0, -1), 10);
+
+  if (isNaN(value)) {
+    return 86400; // 默认返回1天的秒数作为安全备用
+  }
+
+  switch (unit) {
+    case 'd': // 天
+      return value * 24 * 60 * 60;
+    case 'h': // 小时
+      return value * 60 * 60;
+    case 'm': // 分钟
+      return value * 60;
+    case 's': // 秒
+      return value;
+    default: // 如果格式不识别，也返回1天
+      return 86400;
+  }
 };
 
 
@@ -64,7 +68,7 @@ const parseTimeToSeconds = (timeStr: string): number => {
 export class AuthService {
   /**
    * @method register
-   * @description 处理新用户的注册流程。
+   * @description 处理新用户的注册流程。(顾客、骑手)
    * @param {RegisterDto} userData - 包含新用户信息的对象。
    * @returns {Promise<{ user: any; token: string }>} - 返回一个Promise，成功时解析为一个对象，包含用户信息和一个用于立即登录的JWT。
    * @throws {Error} - 如果用户名或手机号已存在，则抛出错误。
@@ -108,6 +112,65 @@ export class AuthService {
     return { user: userWithoutPassword, token };
   }
 
+  /**
+   * @method registerRestaurantAdmin
+   * @description 注册商家管理员并同时创建其名下的餐厅。
+   * @param data - 包含用户和餐厅信息的DTO。
+   * @returns 包含新创建的用户信息和JWT的对象。
+   */
+  public async registerRestaurantAdmin(data: RegisterRestaurantDto) {
+    const { user: userData, restaurant: restaurantData } = data;
+
+    // 从 userData 中解构出 password，
+    // 然后用 ...rest 语法将其他所有属性收集到名为 safeUserData 的新对象中。
+    const { password, ...safeUserData } = userData;
+
+    // 使用数据库事务来确保用户和餐厅的创建是原子操作
+    return prisma.$transaction(async (tx) => {
+      // 1. 检查用户名或手机号是否已存在
+      const existingUser = await tx.users.findFirst({
+        where: {
+          OR: [
+            { username: userData.username },
+            { phone_number: userData.phone_number },
+          ],
+        },
+      });
+      // 如果查询到了用户，说明信息重复，立即抛出错误，终止注册流程。
+      if (existingUser) {
+        throw new Error('用户名或手机号已存在');
+      }
+
+      // 2. 对用户提供的明文密码进行哈希加密
+      const hashedPassword = await bcrypt.hash(userData.password, 10);
+
+      // 3. 创建用户，并强制指定类型为 'restaurant_admin'
+      const newUser = await tx.users.create({
+        data: {
+          ...safeUserData,
+          password_hash: hashedPassword,
+          user_type: UserType.RESTAURANT_ADMIN, // 强制设定用户类型
+        },
+      });
+
+      // 4. 创建餐厅，并将其与新创建的用户关联
+      // 由于数据库层面的 UNIQUE 约束，如果该用户已拥有餐厅，这里会失败
+      const newRestaurant = await tx.restaurants.create({
+        data: {
+          ...restaurantData,
+          owner_user_id: newUser.user_id, // 关键的关联步骤
+        },
+      });
+
+      // 5.为新注册的用户生成一个JWT，让他们可以立即登录。
+      const token = await this.generateToken(newUser, newRestaurant.restaurant_id);
+
+      const { password_hash, ...userWithoutPassword } = newUser;
+
+      return { user: userWithoutPassword, token };
+    });
+  }
+
 
   /**
    * @method login
@@ -140,20 +203,23 @@ export class AuthService {
 
     // 从返回给客户端的用户对象中移除密码哈希。
     const { password_hash, ...userWithoutPassword } = user;
-    
+
     // 3. 登录成功，生成一个新的JWT。
     const token = this.generateToken(userWithoutPassword);
-    
+
     return { user: userWithoutPassword, token };
   }
+
+
 
   /**
    * @method generateToken
    * @description 私有方法，用于根据用户信息生成JWT。
    * @param {any} user - 包含用户关键信息（如ID, 用户名, 类型）的对象。
+   * @param restaurantId - (可选) 如果是商家，则直接传入其餐厅ID。
    * @returns {string} - 返回签名后的JWT字符串。
    */
-  private generateToken(user: any): string {
+  private generateToken(user: any, restaurantId?: number): string {
     // 1.定义JWT的“载荷”（Payload）：将要编码到令牌中的数据。
     // 只应包含必要且非敏感的信息，用于在后续请求中识别用户及其权限。
     const payload: JwtPayload = {
@@ -161,6 +227,9 @@ export class AuthService {
       username: user.username,
       type: user.user_type,
     };
+    if (restaurantId) {
+      payload.restaurantId = restaurantId;
+    }
 
     // 2.从环境变量中读取JWT密钥和过期时间：如果环境变量未设置，则使用一个默认值（仅应在开发环境中使用）。
     const secret = process.env.JWT_SECRET || 'your-default-super-secret-key';
@@ -173,6 +242,6 @@ export class AuthService {
     };
 
     // 使用`jwt.sign`方法生成并签名令牌。
-    return jwt.sign(payload, secret, options );
+    return jwt.sign(payload, secret, options);
   }
 }

@@ -1,4 +1,5 @@
 /**
+ * @fileoverview 认证中间件
  * @description 这个中间件用于保护那些需要登录才能访问的接口。
  */
 
@@ -28,7 +29,8 @@ export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: N
     // 1.检查请求头是否存在以及格式是否为 'Bearer '开头：
     // 如果请求头或令牌不存在，它会返回 401 Unauthorized 错误。
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: '认证失败：缺少或格式错误的令牌' });
+        res.status(401).json({ message: '认证失败：缺少或格式错误的令牌' });
+        return;
     }
 
     // 分割字符串'Bearer <token>'，获取令牌部分
@@ -50,6 +52,7 @@ export const authMiddleware = (req: AuthenticatedRequest, res: Response, next: N
     } catch (error) {
         // 5.如果令牌无效（如已过期或签名不匹配），返回 401 Unauthorized 错误。
         // 捕获 jwt.verify 抛出的错误（如 TokenExpiredError, JsonWebTokenError）
-        return res.status(401).json({ message: '认证失败：无效的令牌' });
+        res.status(401).json({ message: '认证失败：无效的令牌' });
+        return;
     }
 };

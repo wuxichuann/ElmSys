@@ -1,0 +1,16 @@
+// frontend/chanleme_uer_app/tsconfig.node.json
+{
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tsbuildinfo",
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "jsx": "preserve",
+    "lib": ["ESNext"],
+    "types": ["node"] // 明确指定 Node.js 类型定义
+  },
+  "include": ["vite.config.ts"] // 通常只包含 vite.config.ts
+}

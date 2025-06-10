@@ -1,8 +1,13 @@
 // src/index.ts
+import 'reflect-metadata';
+
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+
 import authRoutes from './api/auth.routes'; // 导入auth路由
+import restaurantRoutes from './api/restaurant.routes';
+import orderRoutes from './api/order.routes';
 
 dotenv.config(); // 加载.env文件
 
@@ -14,6 +19,8 @@ app.use(express.json()); // 解析JSON请求体
 
 // 使用路由，并添加/api前缀
 app.use('/api/auth', authRoutes);
+app.use('/api/restaurants', restaurantRoutes);
+app.use('/api/orders', orderRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.send('馋了么餐饮服务平台后端 API 准备就绪!');

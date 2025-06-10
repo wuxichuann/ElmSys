@@ -145,7 +145,7 @@ Content-Type: application/json
         { "itemId": 5, "quantity": 1 },
         { "itemId": 6, "quantity": 1 }
     ],
-    "notes": "不要洋葱，谢谢"
+    "notes": "加血，谢谢"
 }
 
 ### (2.3) [顾客] 下单

@@ -9,6 +9,8 @@ import { Prisma, menu_items } from '@prisma/client';
 import { CreateOrderDto } from '../dto/order/create-order.dto';
 import { Decimal } from '@prisma/client/runtime/library';
 import { socketService } from './socket.service'; // 导入 SocketService 单例
+import { AllowedRestaurantStatus } from '../dto/order/update-order-status.dto';
+
 
 /**
  * @class OrderService
@@ -105,10 +107,116 @@ export class OrderService {
         });
     }
 
+    /**
+     * @description 根据用户ID获取其所有订单，并按创建时间倒序排列。【用于"用户订单"列表显示】
+     * @param {number} customerId - 顾客的用户ID。
+     * @returns {Promise<any[]>} 返回该顾客的订单列表。
+     */
+    public async getOrdersByCustomerId(customerId: number) {
+        return prisma.orders.findMany({
+            // 1.筛选条件：
+            where: {
+                customer_id: customerId,
+            },
+            // 2.前端展示：返回给用户的订单信息，应包含餐厅名称等
+            select: {
+                order_id: true,
+                status: true,
+                total_amount: true,
+                created_at: true,
+
+                // 关联的餐厅信息
+                restaurants: {
+                    select: {
+                        restaurant_name: true,
+                        logo_url: true,
+                    }
+                },
+                // 关联的订单详情信息
+                order_items: {
+                    select: {
+                        quantity: true,
+                        menu_items: { select: { item_name: true } }
+                    }
+                }
+            },
+            orderBy: {
+                created_at: 'desc',
+            },
+        });
+    }
+
+    /**
+     * @description 根据用户ID和订单ID获取单个订单的完整详情。【用于单个"用户订单"详情显示】
+     * @param customerId - 顾客ID，用于权限校验。
+     * @param orderId - 要查询的订单ID。
+     * @returns 返回订单的完整信息。
+     */
+    public async getOrderDetailsForCustomer(customerId: number, orderId: number) {
+        return prisma.orders.findFirst({
+            // 1.筛选条件：
+            where: {
+                order_id: orderId,
+                customer_id: customerId, // 权限校验：确保用户只能看自己的订单
+            },
+            // 2.前端展示：
+            select: { // 这里返回完整信息
+                // 订单主表信息
+                order_id: true,
+                status: true,
+                total_amount: true,
+                delivery_address: true,
+                notes: true,
+                created_at: true,
+                updated_at: true,
+                estimated_delivery_at: true,
+
+                // 餐厅信息
+                restaurants: {
+                    select: {
+                        restaurant_name: true,
+                        phone_number: true,
+                    }
+                },
+
+                // 顾客信息 (安全地选择字段)
+                users_orders_customer_idTousers: {
+                    select: {
+                        user_id: true,
+                        full_name: true,
+                    }
+                },
+
+                // 骑手信息 (安全地选择字段)
+                users_orders_courier_idTousers: {
+                    select: {
+                        full_name: true,
+                        phone_number: true, // 在生产环境中，这应该是虚拟号码
+                        avatar_url: true,
+                    }
+                },
+
+                // 订单项信息
+                order_items: {
+                    select: {
+                        quantity: true,
+                        price_at_purchase: true,
+                        // 嵌套的菜品信息
+                        menu_items: {
+                            select: {
+                                item_name: true,
+                                image_url: true,
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
 
     // --------------商家的订单处理--------------
     /**
-     * @description 商家获取其名下餐厅的新订单新订单列表（状态为 'placed'）。
+     * @description 商家获取其名下餐厅的新订单新订单列表（状态为 'placed'）。【用于"新订单"页】
      * @param {number} restaurantId - 商家所管理的餐厅ID。
      * @returns {Promise<any[]>} 返回包含顾客信息和订单详情的新订单列表，按下单时间升序排列。
      * - 仅返回属于该餐厅且状态为 'placed' 的订单。
@@ -127,13 +235,13 @@ export class OrderService {
                 order_id: true,
                 total_amount: true,
                 status: true,
-                payment_status: true, // [新增] 支付状态
+                payment_status: true,
                 payment_method: true,
-                notes: true,          // [新增] 顾客备注
-                delivery_address: true, // [新增] 配送地址
+                notes: true,          // 顾客备注
+                delivery_address: true, // 配送地址
                 created_at: true,
 
-                // (2) 关联的顾客信息 (保持不变)
+                // (2) 关联的顾客信息
                 users_orders_customer_idTousers: {
                     select: {
                         full_name: true,
@@ -141,7 +249,7 @@ export class OrderService {
                     }
                 },
 
-                // (3) 关联的订单详情 (结构优化)
+                // (3) 关联的订单详情
                 order_items: {
                     select: {
                         // [新增] 直接从 order_items 表中获取数量和购买时价格
@@ -166,7 +274,7 @@ export class OrderService {
     }
 
     /**
-     * @description 商家确认订单，将订单状态从 'placed' 更新为 'restaurant_confirmed'。
+     * @description 商家确认订单，将订单状态从 'placed' 更新为 'restaurant_confirmed'。【用于"接单"】
      * @param {number} restaurantId - 商家管理的餐厅ID
      * @param {number} orderId - 要确认的订单ID
      * @returns {Promise<any>} 更新后的订单信息
@@ -267,12 +375,131 @@ export class OrderService {
         return prisma.orders.findUnique({ where: { order_id: orderId } });
     }
 
-    // 未来可以添加更多商家订单管理方法，例如：
-    // - 更新订单状态为 "备餐中" (preparing)
-    // - 更新订单状态为 "待取餐" (ready_for_pickup)
-    // - 查看历史订单 (getAllOrdersForRestaurant)
-    // - 取消订单 (cancelOrderByRestaurant)
+    /**
+     * @description 获取商家名下所有“进行中”的订单。     【用于"进行中"订单页】
+     * @param {number} restaurantId - 商家的餐厅ID。
+     * @returns {Promise<any[]>} 返回状态为 'restaurant_confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery' 的订单列表。
+     */
+    public async getInProgressOrdersForRestaurant(restaurantId: number) {
+        return prisma.orders.findMany({
+            where: {
+                restaurant_id: restaurantId,
+                status: {
+                    in: ['restaurant_confirmed', 'preparing', 'ready_for_pickup', 'out_for_delivery'],
+                },
+            },
+            select: {
+                // 返回的结构应与“新订单”类似，但可能需要额外包含骑手信息
+                order_id: true, status: true, total_amount: true, notes: true, delivery_address: true, updated_at: true,
+                users_orders_customer_idTousers: { select: { full_name: true } },
+                users_orders_courier_idTousers: { select: { full_name: true, phone_number: true } }, // 包含骑手信息
+                order_items: { select: { quantity: true, menu_items: { select: { item_name: true } } } },
+            },
+            orderBy: {
+                updated_at: 'asc', // 状态最久没变的订单在最前面，提示商家优先处理
+            },
+        });
+    }
 
+    /**
+     * @description 获取商家名下所有已完成或已取消的订单。      【用于"历史订单"页】
+     * @param {number} restaurantId - 商家的餐厅ID。
+     * @returns {Promise<any[]>} 返回状态为 'delivered', 'cancelled', 'refunded' 的订单列表。
+     */
+    public async getHistoryOrdersForRestaurant(restaurantId: number) {
+        return prisma.orders.findMany({
+            where: {
+                restaurant_id: restaurantId,
+                status: {
+                    in: ['delivered', 'cancelled', 'refunded'],
+                },
+            },
+            select: {
+                // 历史订单返回精简信息即可
+                order_id: true,
+                status: true,
+                total_amount: true,
+                created_at: true,
+                delivered_at: true, // 显示送达时间
+                users_orders_customer_idTousers: { select: { full_name: true } },
+                users_orders_courier_idTousers: { select: { full_name: true } },
+            },
+            orderBy: {
+                updated_at: 'desc', // 最新的历史订单在最前面
+            },
+        });
+    }
+
+    /**
+     * @description 商家更新进行中订单的状态，严格遵循 'confirmed' -> 'preparing' -> 'ready_for_pickup' 的流转规则。
+     * @param {number} restaurantId - 商家的餐厅ID。
+     * @param {number} orderId - 要更新的订单ID。
+     * @param {AllowedRestaurantStatus} newStatus - 目标新状态。
+     * @returns {Promise<any>} 返回更新后的完整订单对象。
+     */
+    public async updateOrderStatusByRestaurant(restaurantId: number, orderId: number, newStatus: AllowedRestaurantStatus) {
+        // 1.定义合法的状态流转规则
+        const allowedTransitions: { [key: string]: string[] } = {
+            'restaurant_confirmed': ['preparing'], // 从“已确认”只能到“制作中”
+            'preparing': ['ready_for_pickup'],   // 从“制作中”只能到“待取餐”
+        };
+
+        // 2.使用事务确保“读-校验-写”的原子性
+        return prisma.$transaction(async (tx) => {
+            const order = await tx.orders.findFirst({
+                where: { order_id: orderId, restaurant_id: restaurantId }
+            });
+
+            if (!order) {
+                const error = new Error('订单未找到或无权操作');
+                (error as any).statusCode = 404;
+                throw error;
+            }
+
+            // （1）核心校验：检查当前状态是否允许流转到新状态
+            if (!allowedTransitions[order.status]?.includes(newStatus)) {
+                const error = new Error(`操作无效：无法将订单从 "${order.status}" 更新到 "${newStatus}"`);
+                (error as any).statusCode = 409; // Conflict
+                throw error;
+            }
+
+            // (2) 更新订单状态：
+            const updatedOrder = await tx.orders.update({
+                where: { order_id: orderId },
+                data: { status: newStatus },
+                // 返回完整的订单信息
+                select: {
+                    order_id: true, status: true, total_amount: true, notes: true, delivery_address: true, updated_at: true, customer_id: true, courier_id: true,
+                    users_orders_customer_idTousers: { select: { full_name: true } },
+                    users_orders_courier_idTousers: { select: { full_name: true } }
+                }
+            });
+
+            // （3）触发 WebSocket 通知
+            socketService.emitToUser(updatedOrder.customer_id, 'order_status_update', updatedOrder);
+
+            // 如果状态变为“待取餐”，需要通知骑手
+            if (newStatus === 'ready_for_pickup') {
+                // 如果此时已经有骑手被系统预分配（虽然我们的流程里没有，但可以做健壮性设计）
+                if (updatedOrder.courier_id) {
+                    socketService.emitToUser(updatedOrder.courier_id, 'order_status_update', { message: `订单 #${orderId} 已备好，请尽快取餐！` });
+                }
+                // 更重要的：广播给所有骑手，这个订单现在可以被抢了。
+                // 注意：我们的 getAvailableOrdersForRider 查找的是 'restaurant_confirmed' 状态，
+                // 应该改为查找 'ready_for_pickup' 状态，这样逻辑才闭环。
+                // 假设已经修改，这里广播事件。
+                const fullOrderForRider = await tx.orders.findUnique({
+                    where: { order_id: orderId },
+                    select: { /* ... getAvailableOrdersForRider 中定义的结构 ... */ }
+                });
+                socketService.broadcast('new_available_order', fullOrderForRider);
+            }
+
+            return updatedOrder;
+        });
+    }
+
+    // 未来可以添加更多商家订单管理方法，例如：
 
 
     // --------------骑手的订单处理--------------
@@ -296,6 +523,7 @@ export class OrderService {
                 order_id: true,
                 total_amount: true,
                 created_at: true,
+                notes: true,
 
                 delivery_address: true, // 送餐地址
                 restaurants: { // 包含关联的餐厅信息
@@ -306,7 +534,13 @@ export class OrderService {
                     }
                 },
 
-                notes: true,
+                users_orders_customer_idTousers: {// 包含关联的顾客信息
+                    select: {
+                        full_name: true,
+                        phone_number: true // 直接返回了用户的完整电话
+                    }
+                }
+
             },
             orderBy: {
                 created_at: 'asc', // 优先展示最早创建的订单

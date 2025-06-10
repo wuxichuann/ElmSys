@@ -12,28 +12,11 @@ import { CreateOrderDto } from '../dto/order/create-order.dto';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware';
 import { UserType } from '../constants/user-type.enum';
 import { prisma } from '../db/prisma';
+import { checkRole } from '../middleware/role.middleware';
+import { UpdateOrderStatusDto } from '../dto/order/update-order-status.dto';
 
 const router = Router();
 const orderService = new OrderService();
-
-// =================================================================
-// --- 辅助函数：权限检查 ---
-// =================================================================
-
-/**
- * 创建一个用于检查用户角色的中间件。
- * @param requiredType - 所需的用户类型。
- * @returns 返回一个 Express 中间件函数。
- */
-const checkRole = (requiredType: UserType): RequestHandler => {
-    return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-        if (req.user?.type !== requiredType) {
-            res.status(403).json({ message: '权限不足，禁止访问' });
-            return;
-        }
-        next();
-    };
-};
 
 
 // =================================================================
@@ -72,7 +55,7 @@ const createOrderHandler: RequestHandler = async (req: AuthenticatedRequest, res
 
 // --- 商家端 Handlers ---
 /**
- * 处理商家获取新订单列表的请求。
+ * 处理商家获取新订单列表的请求。【用于“新订单”页】
  */
 const getNewOrdersHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     // 1. 从 JWT (req.user) 中直接获取餐厅 ID
@@ -96,7 +79,7 @@ const getNewOrdersHandler: RequestHandler = async (req: AuthenticatedRequest, re
 };
 
 /**
- * 处理商家确认接单的请求。
+ * 处理商家确认接单的请求。【用于接单】
  * @param req - Express 请求对象，已通过认证和角色检查。
  * @param res - Express 响应对象。
  * @param next - Express next 中间件函数。
@@ -127,6 +110,56 @@ const confirmOrderHandler: RequestHandler = async (req: AuthenticatedRequest, re
         next(error);
     }
 };
+
+/**
+ * @description 处理商家获取“进行中”订单列表的请求。【用于“进行中”页】
+ */
+const getInProgressOrdersHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const orders = await orderService.getInProgressOrdersForRestaurant(req.user.restaurantId);
+        res.status(200).json(orders);
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * @description 处理商家获取“历史”订单列表的请求。【用于“历史”订单页】
+ */
+const getHistoryOrdersHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const orders = await orderService.getHistoryOrdersForRestaurant(req.user.restaurantId);
+        res.status(200).json(orders);
+    } catch (error) {
+        next(error);
+    }
+};
+
+
+/**
+ * @description 处理商家更新进行中订单状态的请求 (e.g., 'preparing', 'ready_for_pickup')。
+ */
+const updateOrderStatusHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    const updateDto = plainToInstance(UpdateOrderStatusDto, req.body);
+    const errors = await validate(updateDto);
+    if (errors.length > 0) {
+        res.status(400).json({ message: '请求数据有误', errors });
+        return;
+    }
+
+    try {
+        const orderId = parseInt(req.params.id, 10);
+        if (isNaN(orderId)) {
+            res.status(400).json({ message: '无效的订单ID格式' });
+            return;
+        }
+        const updatedOrder = await orderService.updateOrderStatusByRestaurant(req.user.restaurantId, orderId, updateDto.status);
+        res.status(200).json(updatedOrder);
+    } catch (error) {
+        next(error);
+    }
+};
+
 
 
 // --- 骑手端 Handlers ---
@@ -185,39 +218,48 @@ router.post('/', authMiddleware, createOrderHandler);
 
 
 // --- 商家订单管理路由 ---
+const isRestaurantAdmin = [authMiddleware, checkRole(UserType.RESTAURANT_ADMIN)];
+
 /**
  * @route   GET /api/orders/restaurant/new
  * @group   Orders - 商家订单管理
- * @description 商家获取其名下的新订单列表 (状态为 'placed')。
+ * @description (板块1) 获取商家名下所有“新下单”('placed')的订单。
  * @access  Private (Restaurant Admin)
- * @returns {Array<object>} 200 - 新订单列表。
- * @returns {object} 403 - 权限不足。
- * @returns {object} 404 - 未在JWT中找到餐厅信息。
  */
-router.get(
-    '/restaurant/new',
-    authMiddleware, // 1. 验证登录
-    checkRole(UserType.RESTAURANT_ADMIN), // 2. 验证角色
-    getNewOrdersHandler // 3. 执行业务逻辑
-);
+router.get('/restaurant/new', ...isRestaurantAdmin, getNewOrdersHandler);
+
+/**
+ * @route   GET /api/orders/restaurant/in-progress
+ * @group   Orders - 商家订单管理
+ * @description (板块2) 获取商家名下所有“进行中”的订单。
+ * @access  Private (Restaurant Admin)
+ */
+router.get('/restaurant/in-progress', ...isRestaurantAdmin, getInProgressOrdersHandler);
+
+/**
+ * @route   GET /api/orders/restaurant/history
+ * @group   Orders - 商家订单管理
+ * @description (板块3) 获取商家名下所有“历史”订单。
+ * @access  Private (Restaurant Admin)
+ */
+router.get('/restaurant/history', ...isRestaurantAdmin, getHistoryOrdersHandler);
 
 /**
  * @route   PATCH /api/orders/:id/confirm
  * @group   Orders - 商家订单管理
  * @description 商家确认接单，将订单状态从 'placed' 更新为 'restaurant_confirmed'。
  * @access  Private (Restaurant Admin)
- * @param {number} id.path.required - 要确认的订单ID。
- * @returns {object} 200 - 接单成功，返回更新后的订单信息。
- * @returns {object} 400 - 订单ID无效。
- * @returns {object} 403 - 权限不足。
- * @returns {object} 404 - 订单无法被接取或未在JWT中找到餐厅信息。
  */
-router.patch(
-    '/:id/confirm',
-    authMiddleware, // 1. 验证登录
-    checkRole(UserType.RESTAURANT_ADMIN), // 2. 验证角色
-    confirmOrderHandler // 3. 执行业务逻辑
-);
+router.patch('/:id/confirm', ...isRestaurantAdmin, confirmOrderHandler);
+
+/**
+ * @route   PATCH /api/orders/:id/status
+ * @group   Orders - 商家订单管理
+ * @description 商家更新进行中订单的状态 (e.g., preparing, ready_for_pickup)。
+ * @access  Private (Restaurant Admin)
+ * @body {UpdateOrderStatusDto} - 包含目标新状态。
+ */
+router.patch('/:id/status', ...isRestaurantAdmin, updateOrderStatusHandler);
 
 // --- 骑手订单管理路由 ---
 /**

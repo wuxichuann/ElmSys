@@ -8,6 +8,7 @@ import { prisma } from '../db/prisma';
 import { Prisma, menu_items } from '@prisma/client';
 import { CreateOrderDto } from '../dto/order/create-order.dto';
 import { Decimal } from '@prisma/client/runtime/library';
+import { socketService } from './socket.service'; // 导入 SocketService 单例
 
 /**
  * @class OrderService
@@ -67,7 +68,7 @@ export class OrderService {
 
         // --- 3. 使用数据库事务写入数据 ---
         return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-            // 创建新订单
+            // (1)创建新订单
             const newOrder = await tx.orders.create({
                 data: {
                     customer_id: userId,
@@ -88,6 +89,17 @@ export class OrderService {
                     order_items: true,
                 },
             });
+
+            // (2)触发 WebSocket 事件 【修改】
+            // 找到餐厅老板的用户ID
+            const restaurant = await tx.restaurants.findUnique({
+                where: { restaurant_id: newOrder.restaurant_id },
+                select: { owner_user_id: true }
+            });
+            if (restaurant && restaurant.owner_user_id) {
+                // 向该商家推送 'new_order' 事件
+                socketService.emitToUser(restaurant.owner_user_id, 'new_order', newOrder);
+            }
 
             return newOrder; // 返回新创建的订单信息
         });
@@ -110,22 +122,45 @@ export class OrderService {
                 status: 'placed',
             },
             // 2.前端展示：
-            include: {
-                // (1)下单的顾客信息
+            select: {
+                // (1) 订单核心信息
+                order_id: true,
+                total_amount: true,
+                status: true,
+                payment_status: true, // [新增] 支付状态
+                payment_method: true,
+                notes: true,          // [新增] 顾客备注
+                delivery_address: true, // [新增] 配送地址
+                created_at: true,
+
+                // (2) 关联的顾客信息 (保持不变)
                 users_orders_customer_idTousers: {
-                    select: { full_name: true, phone_number: true }
+                    select: {
+                        full_name: true,
+                        phone_number: true
+                    }
                 },
-                // (2) 订单详情
+
+                // (3) 关联的订单详情 (结构优化)
                 order_items: {
-                    include: {
+                    select: {
+                        // [新增] 直接从 order_items 表中获取数量和购买时价格
+                        quantity: true,
+                        price_at_purchase: true,
+                        // 关联的菜品信息
                         menu_items: {
-                            select: { item_name: true }
+                            select: {
+                                item_name: true,
+                                image_url: true // [新增] 也可以返回图片，UI更丰富
+                            }
                         }
                     }
                 },
             },
+
+            // 3. 排序 (保持不变)
             orderBy: {
-                created_at: 'asc', // (3)最早的订单在前面
+                created_at: 'asc', // 最早的订单在前面
             },
         });
     }
@@ -144,18 +179,90 @@ export class OrderService {
         const result = await prisma.orders.updateMany({
             where: {
                 order_id: orderId,
-                restaurant_id: restaurantId,
-                status: 'placed',
+                restaurant_id: restaurantId, // 安全校验：必须是自己的餐厅
+                status: 'placed',            // 状态校验：必须是'placed'状态
             },
             data: {
                 status: 'restaurant_confirmed', // 更新状态为 "商家已确认"
             },
         });
 
+        // 2.检查操作结果并提供明确的错误
+        // 如果 count 为 0，说明 where 条件没有匹配到任何记录。
         if (result.count === 0) {
-            throw new Error('订单未找到或状态不正确，无法接单');
+            // (1)先检查订单是否存在:
+            const orderExists = await prisma.orders.findUnique({
+                where: { order_id: orderId },
+                select: { status: true }
+            });
+
+            if (!orderExists) {
+                const error = new Error('操作失败：订单不存在。');
+                (error as any).statusCode = 404; // Not Found
+                throw error;
+            } else {
+                // (2)如果订单存在，那失败的原因就是状态不对或权限不足。
+                const error = new Error(`操作失败：订单当前状态为 "${orderExists.status}" 或您无权操作。`);
+                (error as any).statusCode = 409; // Conflict or 403 Forbidden
+                throw error;
+            }
         }
 
+        // 3.获取更新后的完整订单信息并触发事件 ---
+        const updatedOrder = await prisma.orders.findUnique({
+            where: { order_id: orderId },
+            select: {
+                // (1) 订单核心信息
+                order_id: true,
+                total_amount: true,
+                status: true, // 这是更新后的新状态
+                payment_status: true,
+                payment_method: true,
+                notes: true,
+                delivery_address: true,
+                created_at: true,
+                updated_at: true, // [新增] 返回更新时间
+                customer_id: true,
+
+                // (2) 关联的顾客信息
+                users_orders_customer_idTousers: {
+                    select: {
+                        full_name: true,
+                        phone_number: true
+                    }
+                },
+
+                // (3) 关联的订单详情
+                order_items: {
+                    select: {
+                        quantity: true,
+                        price_at_purchase: true,
+                        menu_items: {
+                            select: {
+                                item_name: true,
+                                image_url: true
+                            }
+                        }
+                    }
+                },
+
+                // (4) 关联的餐厅信息 (这对于推送给骑手端尤其重要)
+                restaurants: {
+                    select: {
+                        restaurant_id: true,
+                        restaurant_name: true,
+                        address: true, // 取餐地址
+                        phone_number: true,
+                    }
+                }
+            }
+        });
+
+        if (updatedOrder) {
+            // 4.触发 WebSocket 事件 ---
+            socketService.emitToUser(updatedOrder.customer_id, 'order_status_update', updatedOrder);
+            socketService.broadcast('new_available_order', updatedOrder);
+        }
         // 2.返回更新后的订单信息
         return prisma.orders.findUnique({ where: { order_id: orderId } });
     }
@@ -187,17 +294,19 @@ export class OrderService {
             // 2.前端展示：
             select: {
                 order_id: true,
-                delivery_address: true, // 送餐地址
                 total_amount: true,
-                notes: true,
                 created_at: true,
+
+                delivery_address: true, // 送餐地址
                 restaurants: { // 包含关联的餐厅信息
                     select: {
                         restaurant_name: true,
                         address: true, // 取餐地址
                         phone_number: true,
                     }
-                }
+                },
+
+                notes: true,
             },
             orderBy: {
                 created_at: 'asc', // 优先展示最早创建的订单
@@ -212,39 +321,76 @@ export class OrderService {
      * @returns 返回更新后的订单信息。
      */
     public async acceptOrder(courierId: number, orderId: number) {
-        // 1.抢单
-        // 使用 updateMany 来处理并发问题。
-        // 这是一个原子性的 "find and update" 操作，防止多个骑手同时抢一单
-        const result = await prisma.orders.updateMany({
-            where: {
-                order_id: orderId,
-                status: 'restaurant_confirmed', // 确保订单状态是可接的
-                courier_id: null, // 再次确认订单未被接取
-            },
-            data: {
-                courier_id: courierId,        // 关联骑手ID
-                status: 'out_for_delivery',   // 更新状态为“配送中”
-                estimated_delivery_at: new Date(Date.now() + 30 * 60 * 1000), // 更新预计送达时间，e.g., 30分钟后
-            },
-        });
-
-        // result.count 会返回被更新的记录数。
-        // 如果为 0，意味着 where 条件没有匹配到任何记录，即订单已被其他骑手抢走或状态已改变。
-        if (result.count === 0) {
-            const error = new Error('抢单失败！订单可能已被其他骑手接取或状态已更新。');
-            (error as any).statusCode = 409; // 409 Conflict 是一个很适合的HTTP状态码
-            throw error;
-        }
-
-        // 2.操作成功后，返回完整的订单信息给前端
-        return prisma.orders.findUnique({
-            where: { order_id: orderId },
-            include: { // 包含完整信息，方便骑手端直接使用
-                restaurants: true,
-                users_orders_customer_idTousers: {
-                    select: { full_name: true, phone_number: true }
+        return prisma.$transaction(async (tx) => {
+            // --- 步骤 1: 查找并锁定订单，同时获取通知所需的ID ---
+            const orderToAccept = await tx.orders.findUnique({
+                where: { order_id: orderId },
+                select: {
+                    status: true,
+                    courier_id: true,
+                    customer_id: true, // 获取顾客ID，用于通知顾客
+                    restaurants: {     // 获取餐厅信息
+                        select: {
+                            owner_user_id: true // 获取商家ID，用于通知商家
+                        }
+                    }
                 }
+            });
+
+            // --- 步骤 2: 严格的业务规则校验 ---
+            if (!orderToAccept) {
+                const error = new Error('订单不存在');
+                (error as any).statusCode = 404;
+                throw error;
             }
+            if (orderToAccept.status !== 'restaurant_confirmed') {
+                const error = new Error(`无法接单，订单当前状态为: ${orderToAccept.status}`);
+                (error as any).statusCode = 409;
+                throw error;
+            }
+            if (orderToAccept.courier_id !== null) {
+                const error = new Error('操作失败，该订单已被其他骑手接取');
+                (error as any).statusCode = 409; // 409 Conflict
+                throw error;
+            }
+
+            // --- 步骤 3: 更新订单，关联骑手并变更状态 ---
+            const updatedOrder = await tx.orders.update({
+                where: {
+                    order_id: orderId,
+                },
+                data: {
+                    courier_id: courierId,
+                    status: 'out_for_delivery',
+                    estimated_delivery_at: new Date(Date.now() + 30 * 60 * 1000), // e.g., 30分钟后
+                },
+                // 定义最终返回给 API 调用者(即抢单成功的骑手)的完整数据结构
+                select: {
+                    order_id: true,
+                    status: true,
+                    delivery_address: true,
+                    total_amount: true,
+                    notes: true,
+                    estimated_delivery_at: true,
+                    // 包含完整的顾客、骑手和餐厅信息
+                    users_orders_customer_idTousers: { select: { full_name: true, phone_number: true } },
+                    users_orders_courier_idTousers: { select: { user_id: true, full_name: true, phone_number: true } },
+                    restaurants: { select: { restaurant_name: true, address: true, phone_number: true } },
+                }
+            });
+
+            // --- 步骤 4: 触发 WebSocket 事件 ---
+            // 1. 向下单的顾客推送状态更新事件
+            socketService.emitToUser(orderToAccept.customer_id, 'order_status_update', updatedOrder);
+
+            // 2. 向商家推送状态更新事件 (需要校验 owner_user_id 是否存在)
+            const ownerId = orderToAccept.restaurants?.owner_user_id;
+            if (ownerId) {
+                socketService.emitToUser(ownerId, 'order_status_update', updatedOrder);
+            }
+
+            // --- 步骤 5: 返回更新后的订单给抢单成功的骑手 ---
+            return updatedOrder;
         });
     }
 }

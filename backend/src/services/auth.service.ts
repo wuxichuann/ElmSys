@@ -201,15 +201,26 @@ export class AuthService {
       throw new Error('账号或密码错误');
     }
 
+    // 3.登录成功，生成一个新的JWT。
+    // --- 核心修正点 ---
+    let restaurantId: number | undefined;
+    // 检查登录的用户是否是商家
+    if (user.user_type === UserType.RESTAURANT_ADMIN) {
+      // 如果是商家，就去数据库查询他名下的餐厅ID
+      const restaurant = await prisma.restaurants.findFirst({
+        where: { owner_user_id: user.user_id },
+        select: { restaurant_id: true },
+      });
+      // 将查询到的餐厅ID赋值给变量
+      restaurantId = restaurant?.restaurant_id;
+    }
     // 从返回给客户端的用户对象中移除密码哈希。
     const { password_hash, ...userWithoutPassword } = user;
-
-    // 3. 登录成功，生成一个新的JWT。
-    const token = this.generateToken(userWithoutPassword);
+    // 将可能存在的 restaurantId 传给 generateToken 方法
+    const token = await this.generateToken(userWithoutPassword, restaurantId);
 
     return { user: userWithoutPassword, token };
   }
-
 
 
   /**

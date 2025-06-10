@@ -1,27 +1,16 @@
 // frontend/chanleme_merchant_app/src/api/auth.ts
-import api from './config';
-import { LoginDto, RegisterRestaurantDto, AuthResponse } from '../types/auth'; // 导入必要的类型
+import api from './index'; // 这里依然需要从 index.ts 导入 default 导出的 axios 实例
+import { LoginResponse, RegisterRestaurantDto } from '../types/auth';
+import { Restaurant } from '../types/restaurant';
 
-class AuthApi {
-  /**
-   * 商家登录
-   * @param credentials 登录凭据 (username, password)
-   * @returns AuthResponse (token, user)
-   */
-  async login(credentials: LoginDto): Promise<AuthResponse> {
-    const response = await api.post<AuthResponse>('/auth/login', credentials);
-    return response.data;
-  }
-
-  /**
-   * 商家注册 (注册一个新餐厅管理员账号)
-   * @param data 注册信息 (包含用户信息和餐厅信息)
-   * @returns AuthResponse (token, user)
-   */
-  async registerRestaurant(data: RegisterRestaurantDto): Promise<AuthResponse> {
-    const response = await api.post<AuthResponse>('/auth/register/restaurant', data);
-    return response.data;
-  }
-}
-
-export const authApi = new AuthApi();
+export const auth = { // 保持具名导出 auth 对象
+  login: (credentials: any): Promise<LoginResponse> => {
+    return api.post('/auth/login', credentials);
+  },
+  registerRestaurantAdmin: (data: RegisterRestaurantDto): Promise<LoginResponse> => {
+    return api.post('/auth/register/restaurant', data).then(res => res.data);
+  },
+  getMerchantRestaurant: (): Promise<Restaurant | null> => {
+    return api.get('/merchant/restaurant').then(response => response.data).catch(() => null);
+  },
+};

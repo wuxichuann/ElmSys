@@ -1,12 +1,11 @@
 // frontend/chanleme_merchant_app/src/api/index.ts
-import api from './config'; // Axios 实例
-import { authApi } from './auth';
-import { orderApi } from './order';
-// import { restaurantApi } from './restaurant'; // 如果商家端也需要操作餐厅信息
+import apiInstance from './config';
+import { auth } from './auth';
+import { menu } from './menu'; // 新增导入
+import { order } from './order';
 
-export {
-  api,
-  authApi,
-  orderApi,
-  // restaurantApi,
-};
+export default apiInstance;
+
+export const authApi = auth;
+export const menuApi = menu; // 新增导出
+export const orderApi = order;

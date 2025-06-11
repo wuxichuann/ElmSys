@@ -23,10 +23,17 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import { useAuthStore } from '../stores/auth';
-import { LoginDto } from '../types/auth';
+import { useRouter } from 'vue-router'; // 引入 useRouter 用于登录成功后的跳转
+import { useAuthStore } from '@/stores/authStore'; // 注意路径，这里应该是 @/stores/authStore
+
+// 根据后端 LoginDto 定义，确保一致性
+interface LoginDto {
+  identifier: string;
+  password: string;
+}
 
 const authStore = useAuthStore();
+const router = useRouter(); // 获取 router 实例
 
 const identifier = ref('');
 const password = ref('');
@@ -38,16 +45,21 @@ const handleLogin = async () => {
   };
   try {
     await authStore.login(loginData);
+    // 登录成功后，authStore.login 会将 token 和 user 存入 store
+    // 并且我们通常会跳转到首页或其他受保护的页面
+    router.push('/'); // 登录成功后跳转到首页
   } catch (err) {
     // 错误已在 store 中处理并设置到 error 状态，这里可以不额外处理
+    // authStore.error 会自动显示在模板中
+    console.error('登录组件捕获到错误:', err);
   }
 };
 </script>
 
 <style scoped>
 /*
-  直接包含 LoginPage 的所有通用样式。
-*/
+ * 直接包含 LoginPage 的所有通用样式。
+ */
 .auth-container {
   max-width: 400px;
   margin: 50px auto;
@@ -80,7 +92,7 @@ input[type="password"],
 input[type="email"],
 input[type="tel"],
 select {
-  width: calc(100% - 20px);
+  width: calc(100% - 20px); /* 减去 padding，使其在 full width 时不会超出 */
   padding: 10px;
   border: 1px solid #ccc;
   border-radius: 4px;

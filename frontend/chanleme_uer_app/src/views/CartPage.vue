@@ -3,7 +3,7 @@
     <Header />
     <div class="container">
       <h1>我的购物车</h1>
-      <div v-if="cartStore.isEmpty" class="empty-cart">
+      <div v-if="cartStore.items.length === 0" class="empty-cart">
         <p>购物车还是空的，去 <router-link to="/">逛逛</router-link> 吧！</p>
       </div>
       <div v-else class="cart-content">
@@ -11,19 +11,19 @@
           <div class="restaurant-name-header">
             来自: {{ currentRestaurantName }}
           </div>
-          <div v-for="item in cartStore.items" :key="item.itemId" class="cart-item">
-            <img :src="item.image_url || 'https://via.placeholder.com/80'" alt="Item Image" class="cart-item-image" />
+          <div v-for="item in cartStore.items" :key="item.productId" class="cart-item">
+            <img :src="item.imageUrl || 'https://via.placeholder.com/80'" alt="Item Image" class="cart-item-image" />
             <div class="item-details">
-              <h4>{{ item.item_name }}</h4>
+              <h4>{{ item.productName }}</h4>
               <p>单价: ¥{{ (typeof item.price === 'number' ? item.price : parseFloat(item.price || '0')).toFixed(2) }}</p>
               <div class="quantity-controls">
-                <button @click="cartStore.updateQuantity(item.itemId, item.quantity - 1)" :disabled="item.quantity <= 1">-</button>
+                <button @click="cartStore.updateItemQuantity(item.productId, item.quantity - 1)" :disabled="item.quantity <= 1">-</button>
                 <span>{{ item.quantity }}</span>
-                <button @click="cartStore.updateQuantity(item.itemId, item.quantity + 1)">+</button>
+                <button @click="cartStore.updateItemQuantity(item.productId, item.quantity + 1)">+</button>
               </div>
               <p class="subtotal">小计: ¥{{ ((typeof item.price === 'number' ? item.price : parseFloat(item.price || '0')) * item.quantity).toFixed(2) }}</p>
             </div>
-            <button class="remove-button" @click="cartStore.removeItem(item.itemId)">移除</button>
+            <button class="remove-button" @click="cartStore.removeItem(item.productId)">移除</button>
           </div>
         </div>
 
@@ -61,12 +61,12 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { useCartStore } from '../stores/cart';
-import { useAuthStore } from '../stores/auth'; // 确保用户已登录
-import { orderApi, restaurantApi } from '../api';
-import { CreateOrderDto } from '../types/order.ts';
-import Header from '../components/Header.vue';
-import router from '../router'; // 引入 router 实例，用于跳转
+import { useCartStore } from '@/stores/cartStore'; // 假设 @/stores 路径正确
+import { useAuthStore } from '@/stores/auth'; // 假设 @/stores 路径正确
+// !!! 核心修改：从 userApi 导入 service 和 DTO !!!
+import { orderService, restaurantService, CreateOrderDto } from '@/api/userApi'; // 假设 @/api 路径正确
+import Header from '@/components/Header.vue'; // 假设 @/components 路径正确
+import router from '@/router'; // 假设 @/router 路径正确
 
 const cartStore = useCartStore();
 const authStore = useAuthStore();
@@ -79,11 +79,13 @@ const orderError = ref<string | null>(null);
 
 const currentRestaurantName = ref('加载中...'); // 用于显示餐厅名称
 
+// CartPage.vue 的 onMounted 钩子中
 onMounted(async () => {
   if (cartStore.restaurantId) {
     try {
-      const restaurantDetail = await restaurantApi.getRestaurantDetails(cartStore.restaurantId);
-      currentRestaurantName.value = restaurantDetail.restaurant_name;
+      const response = await restaurantService.getRestaurantById(cartStore.restaurantId);
+      // !!! 核心修改：改为 restaurant_name !!!
+      currentRestaurantName.value = response.data.restaurant_name;
     } catch (error) {
       console.error('获取餐厅名称失败:', error);
       currentRestaurantName.value = '未知餐厅';
@@ -101,7 +103,7 @@ const placeOrder = async () => {
     alert('配送地址不能为空！');
     return;
   }
-  if (!cartStore.restaurantId) {
+  if (!cartStore.restaurantId || cartStore.items.length === 0) { // 检查购物车是否为空
     alert('购物车为空，无法下单。');
     return;
   }
@@ -109,25 +111,43 @@ const placeOrder = async () => {
   isPlacingOrder.value = true;
   orderError.value = null;
 
+  // !!! 核心修改：构建符合后端 CreateOrderDto 结构的数据 !!!
   const orderData: CreateOrderDto = {
+    // 将 restaurant_id 改为 restaurantId
     restaurantId: cartStore.restaurantId,
+    // 将 delivery_address 改为 deliveryAddress
     deliveryAddress: deliveryAddress.value,
+    payment_method: paymentMethod.value, // 这个没有报错，保持不变
     items: cartStore.items.map(item => ({
-      itemId: item.itemId,
-      quantity: item.quantity,
+      itemId: item.productId, // 这个没有报错，保持不变
+      quantity: item.quantity,      // 这个没有报错，保持不变
     })),
-    notes: notes.value || undefined, // 如果为空字符串，则传入 undefined
-    paymentMethod: paymentMethod.value,
+    notes: notes.value.trim() !== '' ? notes.value : undefined,
   };
 
   try {
-    const newOrder = await orderApi.createOrder(orderData);
-    alert(`订单创建成功！订单号: ${newOrder.order_id}`);
+    // !!! 核心修改：使用 orderService.createOrder !!!
+    const newOrder = await orderService.createOrder(orderData);
+    alert(`订单创建成功！订单号: ${newOrder.data.order.order_id}`); // 假设 newOrder.data 是 Order 对象
     cartStore.clearCart(); // 下单成功后清空购物车
-    router.push('/my-orders'); // 跳转到我的订单页面
-  } catch (error: any) {
+    router.push('/'); // 跳转到我的订单页面
+  }catch (error: any) {
     orderError.value = error.response?.data?.message || '下单失败，请重试。';
-    console.error('下单失败:', error);
+    console.error('下单失败:', error); // 保留这行，提供上下文
+
+    // !!! 核心修改：确保详细错误能够完整打印 !!!
+    if (error.response && error.response.data && Array.isArray(error.response.data.errors)) {
+      console.error('后端验证错误详情 (JSON):', JSON.stringify(error.response.data.errors, null, 2));
+      // 如果你希望在 UI 上显示更友好的第一个错误信息，可以考虑：
+      // if (error.response.data.errors.length > 0) {
+      //   const firstError = error.response.data.errors[0];
+      //   const property = firstError.property || '未知字段';
+      //   const constraint = Object.values(firstError.constraints || {})[0] || '格式错误';
+      //   orderError.value = `${error.response.data.message || '下单失败'}：${property} ${constraint}`;
+      // }
+    } else if (error.response?.data?.message) {
+      console.error('后端返回消息:', error.response.data.message);
+    }
   } finally {
     isPlacingOrder.value = false;
   }
@@ -135,6 +155,7 @@ const placeOrder = async () => {
 </script>
 
 <style scoped>
+/* 样式部分保持不变 */
 .cart-page {
   display: flex;
   flex-direction: column;
@@ -251,8 +272,8 @@ h1 {
   background-color: #e0e0e0;
 }
 .quantity-controls button:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .quantity-controls span {
@@ -321,29 +342,29 @@ h1 {
 }
 
 .form-group {
-    margin-bottom: 15px;
+  margin-bottom: 15px;
 }
 
 .form-group label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: bold;
-    color: #555;
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+  color: #555;
 }
 
 .form-group input,
 .form-group select,
 .form-group textarea {
-    width: calc(100% - 20px); /* Adjust for padding */
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    font-size: 16px;
-    box-sizing: border-box; /* Include padding in width */
+  width: calc(100% - 20px); /* Adjust for padding */
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 16px;
+  box-sizing: border-box; /* Include padding in width */
 }
 
 .form-group textarea {
-    resize: vertical; /* Allow vertical resizing */
+  resize: vertical; /* Allow vertical resizing */
 }
 
 .checkout-button {

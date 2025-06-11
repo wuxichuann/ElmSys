@@ -1,54 +1,75 @@
+// src/router/index.ts
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
-import { useAuthStore } from '../stores/auth'; // 引入认证 store
-
-// 页面组件
-import HomePage from '../views/HomePage.vue';
-import RestaurantDetailPage from '../views/RestaurantDetailPage.vue';
-import CartPage from '../views/CartPage.vue';
-import LoginPage from '../views/LoginPage.vue';
-import RegisterPage from '../views/RegisterPage.vue';
-import MyOrdersPage from '../views/MyOrdersPage.vue'; // 假设你希望用户能查看自己的订单
+import { useAuthStore } from '@/stores/authStore';
 
 const routes: Array<RouteRecordRaw> = [
   {
-    path: '/',
-    name: 'Home',
-    component: HomePage,
-    meta: { requiresAuth: false }, // 首页不需要登录
-  },
-  {
-    path: '/restaurants/:id',
-    name: 'RestaurantDetail',
-    component: RestaurantDetailPage,
-    props: true, // 允许将路由参数作为 props 传递给组件
-    meta: { requiresAuth: false }, // 餐厅详情页也不需要登录
-  },
-  {
-    path: '/cart',
-    name: 'Cart',
-    component: CartPage,
-    meta: { requiresAuth: true }, // 购物车需要登录
-  },
-  {
-    path: '/my-orders',
-    name: 'MyOrders',
-    component: MyOrdersPage,
-    meta: { requiresAuth: true }, // 我的订单需要登录
-  },
-  {
     path: '/login',
     name: 'Login',
-    component: LoginPage,
+    component: () => import('@/views/LoginPage.vue'),
     meta: { requiresAuth: false },
   },
   {
     path: '/register',
     name: 'Register',
-    component: RegisterPage,
+    component: () => import('@/views/RegisterPage.vue'),
     meta: { requiresAuth: false },
   },
-  // 重定向到首页或 404 页
-  { path: '/:pathMatch(.*)*', redirect: '/' }
+  {
+    path: '/',
+    name: 'Home',
+    component: () => import('@/views/HomePage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/restaurants/:id',
+    name: 'RestaurantDetail',
+    component: () => import('@/views/RestaurantDetailPage.vue'),
+    props: true,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/cart',
+    name: 'Cart',
+    component: () => import('@/views/CartPage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/orders',
+    name: 'OrderManagement',
+    component: () => import('@/views/OrderManagementPage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/order/:id',
+    name: 'OrderDetail',
+    component: () => import('@/views/OrderDetailPage.vue'),
+    props: true,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/profile',
+    name: 'Profile',
+    component: () => import('@/views/Profile/ProfilePage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/profile/edit',
+    name: 'EditProfile',
+    component: () => import('@/views/Profile/EditProfilePage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/profile/change-password',
+    name: 'ChangePassword',
+    component: () => import('@/views/Profile/ChangePasswordPage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/:pathMatch(.*)*', // 404 catch-all
+    name: 'NotFound',
+    component: () => import('@/views/NotFoundPage.vue'), // 您需要创建这个组件
+  }
 ];
 
 const router = createRouter({
@@ -56,17 +77,14 @@ const router = createRouter({
   routes,
 });
 
-// 导航守卫：实现路由鉴权
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore();
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    // 如果路由需要认证但用户未登录，则跳转到登录页
-    next({ name: 'Login' });
+    next('/login'); // 未认证用户重定向到登录页
   } else if ((to.name === 'Login' || to.name === 'Register') && authStore.isAuthenticated) {
-    // 如果用户已登录但尝试访问登录或注册页，则跳转到首页
-    next({ name: 'Home' });
+    next('/'); // 已认证用户访问登录注册页，重定向到首页
   } else {
-    next(); // 继续导航
+    next();
   }
 });
 

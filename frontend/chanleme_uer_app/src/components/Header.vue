@@ -1,116 +1,109 @@
 <template>
-  <header class="main-header">
-    <div class="header-container">
-      <router-link to="/" class="logo">馋了么</router-link>
-      <nav>
-        <ul class="nav-links">
-          <li><router-link to="/">首页</router-link></li>
-          <li v-if="authStore.isAuthenticated && authStore.isCustomer">
-            <router-link to="/my-orders">我的订单</router-link>
-          </li>
-          <li v-if="authStore.isAuthenticated">
-            <button @click="authStore.logout()" class="logout-button">退出登录</button>
-          </li>
-          <li v-else>
-            <router-link to="/login">登录</router-link>
-            <router-link to="/register" class="register-link">注册</router-link>
-          </li>
-          <li class="cart-icon" v-if="authStore.isCustomer && cartStore.totalItems > 0">
-            <router-link to="/cart">
-              🛒
-              <span class="cart-count">{{ cartStore.totalItems }}</span>
-            </router-link>
-          </li>
-        </ul>
-      </nav>
-    </div>
+  <header class="app-header">
+    <nav>
+      <router-link to="/" class="logo-link">馋了么</router-link>
+      <div class="nav-links">
+        <router-link to="/">首页</router-link>
+        <router-link to="/cart">购物车 ({{ cartStore.totalItems }})</router-link>
+        <router-link to="/orders">我的订单</router-link>
+      </div>
+
+      <div class="auth-section">
+        <span v-if="authStore.isAuthenticated" class="auth-status">
+          欢迎，{{ authStore.user?.username || '用户' }}！
+          <router-link to="/profile" class="profile-link">个人中心</router-link>
+          <button @click="logout" class="logout-btn">退出</button>
+        </span>
+        <span v-else class="auth-status">
+          <router-link to="/login" class="auth-link">登录</router-link>
+          <span class="auth-separator">|</span>
+          <router-link to="/register" class="auth-link">注册</router-link>
+        </span>
+      </div>
+    </nav>
   </header>
 </template>
 
 <script setup lang="ts">
-import { useAuthStore } from '../stores/auth';
-import { useCartStore } from '../stores/cart';
+import { useRouter } from 'vue-router';
+import { useAuthStore } from '@/stores/authStore';
+import { useCartStore } from '@/stores/cartStore';
 
 const authStore = useAuthStore();
 const cartStore = useCartStore();
+const router = useRouter();
+
+const logout = () => {
+  authStore.logout();
+  router.push('/login'); // 登出后跳转到登录页
+};
 </script>
 
 <style scoped>
-.main-header {
-  background-color: #333;
+.app-header {
+  background-color: #3498db;
   color: white;
-  padding: 15px 0;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  padding: 15px 30px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
-
-.header-container {
+.app-header nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   max-width: 1200px;
   margin: 0 auto;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 20px;
 }
-
-.logo {
-  font-size: 28px;
+.logo-link {
+  font-size: 1.8em;
   font-weight: bold;
   color: white;
   text-decoration: none;
+  margin-right: 40px;
 }
-
-.nav-links {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  gap: 25px; /* Adjust spacing between nav items */
-}
-
-.nav-links li a, .nav-links li button {
+.nav-links a {
   color: white;
   text-decoration: none;
-  font-size: 17px;
-  padding: 8px 12px;
-  border-radius: 5px;
-  transition: background-color 0.3s, color 0.3s;
+  margin-right: 25px;
+  font-weight: 500;
+  transition: text-decoration 0.2s ease;
 }
-
-.nav-links li a:hover, .nav-links li button:hover {
-  background-color: #555;
+.nav-links a:hover {
+  text-decoration: underline;
 }
-
-.nav-links li button {
+.auth-section {
+  display: flex;
+  align-items: center;
+}
+.auth-status {
+  font-size: 0.95em;
+  display: flex;
+  align-items: center;
+}
+.profile-link, .auth-link {
+  color: white;
+  text-decoration: none;
+  margin-left: 15px;
+  font-weight: 500;
+}
+.profile-link:hover, .auth-link:hover {
+  text-decoration: underline;
+}
+.auth-separator {
+  margin: 0 5px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.logout-btn {
   background: none;
-  border: none;
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.nav-links .register-link {
-  background-color: #007bff;
-}
-
-.nav-links .register-link:hover {
-  background-color: #0056b3;
-}
-
-.cart-icon {
-  position: relative;
-  font-size: 24px;
-}
-
-.cart-icon .cart-count {
-  position: absolute;
-  top: -8px;
-  right: -10px;
-  background-color: #ff5722;
+  border: 1px solid rgba(255, 255, 255, 0.7);
   color: white;
-  border-radius: 50%;
-  padding: 2px 7px;
-  font-size: 12px;
-  font-weight: bold;
-  line-height: 1;
+  padding: 6px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-left: 15px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+.logout-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: white;
 }
 </style>

@@ -1,38 +1,44 @@
 <template>
-  <div class="auth-container">
-    <h2>用户注册</h2>
+  <div class="register-container container">
+    <h2>商家注册</h2>
     <form @submit.prevent="handleRegister">
       <div class="form-group">
-        <label for="username">用户名:</label>
-        <input type="text" id="username" v-model="username" required />
-      </div>
+        <label for="identifier">商家账号 (用户名):</label>
+        <input type="text" id="identifier" v-model="identifier" required />
+        </div>
       <div class="form-group">
         <label for="password">密码:</label>
-        <input type="password" id="password" v-model="password" required minlength="6" />
+        <input type="password" id="password" v-model="password" required />
       </div>
       <div class="form-group">
-        <label for="email">邮箱:</label>
-        <input type="email" id="email" v-model="email" required />
+        <label for="confirmPassword">确认密码:</label>
+        <input type="password" id="confirmPassword" v-model="confirmPassword" required />
       </div>
       <div class="form-group">
-        <label for="phoneNumber">手机号:</label>
-        <input type="tel" id="phoneNumber" v-model="phoneNumber" required />
+        <label for="restaurantName">餐厅名称:</label>
+        <input type="text" id="restaurantName" v-model="restaurantName" required />
       </div>
       <div class="form-group">
-        <label for="fullName">真实姓名:</label>
-        <input type="text" id="fullName" v-model="fullName" required />
+        <label for="restaurantAddress">餐厅地址:</label>
+        <input type="text" id="restaurantAddress" v-model="restaurantAddress" required />
       </div>
       <div class="form-group">
-        <label for="userType">用户类型:</label>
-        <select id="userType" v-model="userType" required>
-          <option :value="UserType.CUSTOMER">顾客</option>
-          <option :value="UserType.COURIER">骑手</option>
-          </select>
+        <label for="restaurantPhone">餐厅电话:</label>
+        <input type="text" id="restaurantPhone" v-model="restaurantPhone" required />
+        </div>
+      <div class="form-group">
+        <label for="restaurantDescription">餐厅描述:</label>
+        <textarea id="restaurantDescription" v-model="restaurantDescription"></textarea>
       </div>
-      <button type="submit" :disabled="authStore.isLoading">
-        {{ authStore.isLoading ? '注册中...' : '注册' }}
+      <div class="form-group">
+        <label for="restaurantImageUrl">餐厅图片URL:</label>
+        <input type="text" id="restaurantImageUrl" v-model="restaurantImageUrl" />
+        </div>
+
+      <button type="submit" :disabled="loading">
+        {{ loading ? '注册中...' : '注册' }}
       </button>
-      <p v-if="authStore.error" class="error-message">{{ authStore.error }}</p>
+      <p v-if="error" class="error-message">{{ error }}</p>
       <p>
         已有账号？<router-link to="/login">立即登录</router-link>
       </p>
@@ -42,49 +48,129 @@
 
 <script setup lang="ts">
 import { ref } from 'vue';
-import { useAuthStore } from '../stores/auth';
-import { RegisterDto, UserType } from '../types/auth'; // 确保 UserType 从这里导入
+import { useRouter } from 'vue-router';
+import { authService } from '@/api/merchantApi'; // 使用您提供的 authService 导入
 
-const authStore = useAuthStore();
+// --- 根据后端 DTO 重新定义类型 ---
+// 在实际项目中，您应该从后端 DTO 文件中导入这些类型，例如：
+// import { RegisterRestaurantDto, RegisterDto, RestaurantDataDto, UserType } from '@/types/backend-dtos';
 
-const username = ref('');
+export enum UserType {
+  CUSTOMER = 'customer',
+  MERCHANT = 'merchant',
+  DELIVERY_DRIVER = 'delivery_driver',
+  ADMIN = 'admin',
+  RESTAURANT_ADMIN = 'restaurant_admin', // 确保这个是后端期望的商家管理类型
+}
+
+// 对应 backend/src/dto/auth/restaurant-data.dto.ts
+export interface RestaurantDataDto {
+  restaurant_name: string;
+  description?: string; // 后端定义为可选
+  address: string;
+  phone_number: string;
+  opening_hours: string; // 后端定义为必填
+}
+
+// 对应 backend/src/dto/auth/register.dto.ts
+export interface RegisterDto {
+  username: string;
+  password: string;
+  email: string; // 后端必填，前端模板无输入
+  phone_number: string; // 后端必填，前端模板无输入
+  user_type: UserType;
+  full_name: string; // 后端必填，前端模板无输入
+}
+
+// 对应 backend/src/dto/auth/register-restaurant.dto.ts
+export interface RegisterRestaurantDto {
+  user: RegisterDto;
+  restaurant: RestaurantDataDto;
+}
+// --- 模拟后端 DTO 定义结束 ---
+
+// 前端表单数据绑定
+const identifier = ref('');
 const password = ref('');
-const email = ref('');
-const phoneNumber = ref('');
-const fullName = ref('');
-const userType = ref<UserType>(UserType.CUSTOMER); // 默认为顾客
+const confirmPassword = ref('');
+
+// 餐厅信息
+const restaurantName = ref('');
+const restaurantAddress = ref('');
+const restaurantPhone = ref('');
+const restaurantDescription = ref('');
+const restaurantImageUrl = ref(''); // 此字段后端 DTO 未定义，不会被发送
+
+const loading = ref(false);
+const error = ref<string | null>(null);
+const router = useRouter();
 
 const handleRegister = async () => {
-  const registerData: RegisterDto = {
-    username: username.value,
-    password: password.value,
-    email: email.value,
-    phone_number: phoneNumber.value,
-    full_name: fullName.value,
-    user_type: userType.value,
-  };
+  error.value = null; // 清除之前的错误信息
+
+  if (password.value !== confirmPassword.value) {
+    error.value = '两次输入的密码不一致！';
+    return;
+  }
+
+  loading.value = true;
   try {
-    await authStore.register(registerData);
-  } catch (err) {
-    // 错误已在 store 中处理
+    const registerPayload: RegisterRestaurantDto = { // 将数据类型明确为 RegisterRestaurantDto
+      user: {
+        username: identifier.value,
+        password: password.value,
+        // --- 修正：后端必填但前端模板无输入，提供默认值 ---
+        // 邮箱格式验证很重要，这里用一个通用格式，实际应让用户输入
+        email: `merchant_${identifier.value}@example.com`,
+        // 手机号格式验证也很重要，这里用一个中国区手机号格式，实际应让用户输入
+        // 假设 identifier 如果是数字且长度为11位，则作为手机号，否则给个默认值
+        phone_number: /^\d{11}$/.test(identifier.value) ? identifier.value : '13812345678',
+        user_type: UserType.RESTAURANT_ADMIN, // 明确使用后端定义的 RESTAURANT_ADMIN
+        full_name: restaurantName.value || '商家管理员', // 提供一个默认姓名
+        // --- 修正结束 ---
+      },
+      restaurant: {
+        restaurant_name: restaurantName.value,
+        description: restaurantDescription.value, // description 在后端是可选的
+        address: restaurantAddress.value,
+        phone_number: restaurantPhone.value, // 对应后端 RestaurantDataDto 的 phone_number
+        // --- 修正：后端必填但前端模板无输入，提供默认值 ---
+        opening_hours: '每日 09:00 - 22:00', // 营业时间是必填的
+        // --- 修正结束 ---
+      },
+    };
+
+    // --- 关键修正：直接使用 authService 调用 API ---
+    await authService.registerRestaurant(registerPayload);
+
+    alert('注册成功，请登录！');
+    router.push('/login');
+  } catch (err: any) {
+    // 捕获并显示更具体的错误信息，特别是后端返回的错误消息
+    if (err.response && err.response.data && err.response.data.message) {
+      // 后端返回的错误消息通常在 err.response.data.message
+      error.value = err.response.data.message;
+      console.error('Registration failed with backend error:', err.response.data);
+    } else {
+      error.value = err.message || '注册失败，请检查网络或重试。';
+      console.error('Registration error:', err);
+    }
+  } finally {
+    loading.value = false;
   }
 };
 </script>
 
 <style scoped>
-/*
-  注意：由于你选择了直接复制，此处的样式是 LoginPage.vue 中包含的所有通用样式。
-  如果 LoginPage.vue 中有你不需要在 RegisterPage.vue 中使用的特定样式，
-  你需要手动移除它们。
-*/
-.auth-container {
-  max-width: 400px;
+/* 样式部分保持不变，直接复制您提供的样式 */
+.register-container {
+  max-width: 500px;
   margin: 50px auto;
   padding: 30px;
-  border: 1px solid #ddd;
+  border: 1px solid #eee;
   border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  background-color: #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  background-color: white;
 }
 
 h2 {
@@ -93,56 +179,60 @@ h2 {
   margin-bottom: 25px;
 }
 
+form {
+  display: flex;
+  flex-direction: column;
+}
+
 .form-group {
   margin-bottom: 15px;
+  text-align: left;
 }
 
 label {
   display: block;
   margin-bottom: 8px;
-  color: #555;
   font-weight: bold;
+  color: #555;
 }
 
 input[type="text"],
 input[type="password"],
 input[type="email"],
 input[type="tel"],
-select {
+textarea {
   width: calc(100% - 20px);
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
   font-size: 16px;
-  box-sizing: border-box; /* Ensures padding doesn't affect total width */
+  box-sizing: border-box;
+}
+
+textarea {
+  resize: vertical; /* Allow vertical resizing */
+  min-height: 80px;
 }
 
 button {
-  width: 100%;
-  padding: 12px;
-  background-color: #007bff;
+  background-color: #42b983;
   color: white;
+  padding: 12px 20px;
   border: none;
-  border-radius: 4px;
-  font-size: 18px;
+  border-radius: 6px;
   cursor: pointer;
+  font-size: 18px;
+  margin-top: 15px;
   transition: background-color 0.3s ease;
 }
 
 button:hover:not(:disabled) {
-  background-color: #0056b3;
+  background-color: #368e6b;
 }
 
 button:disabled {
   background-color: #cccccc;
   cursor: not-allowed;
-}
-
-.error-message {
-  color: #dc3545;
-  text-align: center;
-  margin-top: 15px;
-  font-size: 14px;
 }
 
 p {
@@ -151,17 +241,20 @@ p {
   color: #666;
 }
 
-/* 注意：在 <style scoped> 中直接写 router-link 会将其视为一个 HTML 标签。
-   Vue Router 的 <router-link> 是一个组件，它的样式通常通过类名来控制。
-   我已在上面提供的 LoginPage.vue 中修复了这个问题，改用全局 a 标签样式或明确的类。
-   为了保持一致性，这里我也做了修改，确保链接样式能正常作用。
-*/
-a { /* 这里的 'a' 选择器会作用于 <router-link> 渲染出来的 <a> 标签 */
+p a {
   color: #007bff;
   text-decoration: none;
+  font-weight: bold;
 }
 
-a:hover {
+p a:hover {
   text-decoration: underline;
+}
+
+.error-message {
+  color: #dc3545;
+  text-align: center;
+  margin-top: 15px;
+  font-weight: bold;
 }
 </style>

@@ -48,10 +48,10 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { restaurantApi } from '../api';
-import { RestaurantDetail, MenuItem } from '../types/restaurant.ts';
-import { useCartStore } from '../stores/cart';
-import Header from '../components/Header.vue';
+import { restaurantService } from '@/api/userApi';
+import { RestaurantDetail, MenuItem } from '@/types/restaurant';
+import { useCartStore } from '@/stores/cartStore';
+import Header from '@/components/Header.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -60,13 +60,15 @@ const cartStore = useCartStore();
 const restaurant = ref<RestaurantDetail | null>(null);
 const isLoading = ref(true);
 
-const restaurantId = ref<number>(parseInt(route.params.id as string));
+// !!! 核心修改：将从路由参数获取的 ID 立即转换为数字类型 !!!
+const restaurantId = ref<number>(parseInt(route.params.id as string)); 
 
 const fetchRestaurantDetails = async () => {
   isLoading.value = true;
   try {
-    const data = await restaurantApi.getRestaurantDetails(restaurantId.value);
-    restaurant.value = data;
+    // 确保这里传入的是 number 类型
+    const response = await restaurantService.getRestaurantById(restaurantId.value);
+    restaurant.value = response.data;
   } catch (error) {
     console.error('获取餐厅详情失败:', error);
     restaurant.value = null;
@@ -76,14 +78,22 @@ const fetchRestaurantDetails = async () => {
 };
 
 const addToCart = (item: MenuItem) => {
-  // 确保购物车中的商品都来自当前餐厅
   if (cartStore.restaurantId && cartStore.restaurantId !== restaurant.value?.restaurant_id) {
     if (!confirm('购物车中已有其他餐厅的商品，是否清空购物车并添加此商品？')) {
       return;
     }
     cartStore.clearCart();
   }
-  cartStore.addItem(item);
+  
+  cartStore.addItem({
+    productId: item.item_id,
+    productName: item.item_name,
+    price: item.price,
+    quantity: 1,
+    imageUrl: item.image_url,
+    restaurantId: restaurant.value?.restaurant_id || '',
+    restaurantName: restaurant.value?.restaurant_name || '',
+  });
   alert(`${item.item_name} 已加入购物车！`);
 };
 
@@ -97,12 +107,16 @@ onMounted(() => {
 
 // 监听路由参数变化，如果用户直接在 URL 中修改了 ID，重新加载数据
 watch(() => route.params.id, (newId) => {
-  restaurantId.value = parseInt(newId as string);
-  fetchRestaurantDetails();
+  if (newId) {
+    // !!! 核心修改：在 watch 中也进行类型转换 !!!
+    restaurantId.value = parseInt(newId as string); 
+    fetchRestaurantDetails();
+  }
 });
 </script>
 
 <style scoped>
+/* 样式部分保持不变 */
 .restaurant-detail-page {
   display: flex;
   flex-direction: column;
@@ -114,7 +128,7 @@ watch(() => route.params.id, (newId) => {
   margin: 20px auto;
   padding: 0 20px;
   flex-grow: 1;
-  position: relative; /* For fixed cart summary */
+  position: relative;
 }
 
 .loading-spinner, .error-message, .no-menu-items {

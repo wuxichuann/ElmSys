@@ -1,44 +1,39 @@
 <template>
-  <div class="register-container container">
-    <h2>商家注册</h2>
+  <div class="auth-container">
+    <h2>用户注册</h2>
     <form @submit.prevent="handleRegister">
       <div class="form-group">
-        <label for="identifier">商家账号 (用户名):</label>
-        <input type="text" id="identifier" v-model="identifier" required />
-        </div>
+        <label for="username">用户名:</label>
+        <input type="text" id="username" v-model="username" required />
+      </div>
       <div class="form-group">
         <label for="password">密码:</label>
-        <input type="password" id="password" v-model="password" required />
+        <input type="password" id="password" v-model="password" required minlength="6" />
       </div>
       <div class="form-group">
         <label for="confirmPassword">确认密码:</label>
         <input type="password" id="confirmPassword" v-model="confirmPassword" required />
       </div>
       <div class="form-group">
-        <label for="restaurantName">餐厅名称:</label>
-        <input type="text" id="restaurantName" v-model="restaurantName" required />
+        <label for="email">邮箱:</label>
+        <input type="email" id="email" v-model="email" required />
       </div>
       <div class="form-group">
-        <label for="restaurantAddress">餐厅地址:</label>
-        <input type="text" id="restaurantAddress" v-model="restaurantAddress" required />
+        <label for="phoneNumber">手机号:</label> <input type="tel" id="phoneNumber" v-model="phoneNumber" required />
       </div>
       <div class="form-group">
-        <label for="restaurantPhone">餐厅电话:</label>
-        <input type="text" id="restaurantPhone" v-model="restaurantPhone" required />
-        </div>
-      <div class="form-group">
-        <label for="restaurantDescription">餐厅描述:</label>
-        <textarea id="restaurantDescription" v-model="restaurantDescription"></textarea>
+        <label for="fullName">真实姓名:</label> <input type="text" id="fullName" v-model="fullName" required />
       </div>
       <div class="form-group">
-        <label for="restaurantImageUrl">餐厅图片URL:</label>
-        <input type="text" id="restaurantImageUrl" v-model="restaurantImageUrl" />
-        </div>
-
-      <button type="submit" :disabled="loading">
-        {{ loading ? '注册中...' : '注册' }}
+        <label for="userType">用户类型:</label> <select id="userType" v-model="userType" required>
+          <option :value="UserType.CUSTOMER">顾客</option>
+          <option :value="UserType.COURIER">骑手</option>
+        </select>
+      </div>
+      <button type="submit" :disabled="authStore.isLoading">
+        {{ authStore.isLoading ? '注册中...' : '注册' }}
       </button>
-      <p v-if="error" class="error-message">{{ error }}</p>
+      <p v-if="authStore.error" class="error-message">{{ authStore.error }}</p>
       <p>
         已有账号？<router-link to="/login">立即登录</router-link>
       </p>
@@ -49,128 +44,79 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { authService } from '@/api/merchantApi'; // 使用您提供的 authService 导入
+import { useAuthStore } from '@/stores/authStore';
 
-// --- 根据后端 DTO 重新定义类型 ---
-// 在实际项目中，您应该从后端 DTO 文件中导入这些类型，例如：
-// import { RegisterRestaurantDto, RegisterDto, RestaurantDataDto, UserType } from '@/types/backend-dtos';
-
-export enum UserType {
+// 定义 UserType 枚举，根据后端 RegisterDto 中的 user_type 字段可能的值
+// 注意：这里的枚举值要和后端 user-type.enum.ts 中的保持一致
+enum UserType {
   CUSTOMER = 'customer',
-  MERCHANT = 'merchant',
-  DELIVERY_DRIVER = 'delivery_driver',
-  ADMIN = 'admin',
-  RESTAURANT_ADMIN = 'restaurant_admin', // 确保这个是后端期望的商家管理类型
+  COURIER = 'courier',
+  RESTAURANT_ADMIN = 'restaurant_admin', // 如果后端有这个类型，也需要加上
 }
 
-// 对应 backend/src/dto/auth/restaurant-data.dto.ts
-export interface RestaurantDataDto {
-  restaurant_name: string;
-  description?: string; // 后端定义为可选
-  address: string;
-  phone_number: string;
-  opening_hours: string; // 后端定义为必填
-}
-
-// 对应 backend/src/dto/auth/register.dto.ts
-export interface RegisterDto {
+// !!! 重点修改这里 !!!
+// 定义 RegisterDto 接口，现在与后端 `backend\src\dto\auth\register.dto.ts` 严格对应
+interface RegisterDto {
   username: string;
   password: string;
-  email: string; // 后端必填，前端模板无输入
-  phone_number: string; // 后端必填，前端模板无输入
-  user_type: UserType;
-  full_name: string; // 后端必填，前端模板无输入
+  email: string;
+  phone_number: string; // <-- 修改为下划线命名
+  full_name: string;    // <-- 修改为下划线命名
+  user_type: UserType;  // <-- 修改为下划线命名
 }
 
-// 对应 backend/src/dto/auth/register-restaurant.dto.ts
-export interface RegisterRestaurantDto {
-  user: RegisterDto;
-  restaurant: RestaurantDataDto;
-}
-// --- 模拟后端 DTO 定义结束 ---
-
-// 前端表单数据绑定
-const identifier = ref('');
-const password = ref('');
-const confirmPassword = ref('');
-
-// 餐厅信息
-const restaurantName = ref('');
-const restaurantAddress = ref('');
-const restaurantPhone = ref('');
-const restaurantDescription = ref('');
-const restaurantImageUrl = ref(''); // 此字段后端 DTO 未定义，不会被发送
-
-const loading = ref(false);
-const error = ref<string | null>(null);
+const authStore = useAuthStore();
 const router = useRouter();
 
-const handleRegister = async () => {
-  error.value = null; // 清除之前的错误信息
+const username = ref('');
+const password = ref('');
+const confirmPassword = ref('');
+const email = ref('');
+const phoneNumber = ref(''); // 这个 ref 变量名可以保持驼峰命名，它只用于前端的 v-model 绑定
+const fullName = ref('');    // 这个 ref 变量名可以保持驼峰命名
+const userType = ref<UserType>(UserType.CUSTOMER); // 这个 ref 变量名可以保持驼峰命名
 
+const handleRegister = async () => {
   if (password.value !== confirmPassword.value) {
-    error.value = '两次输入的密码不一致！';
+    authStore.error = '两次输入的密码不一致';
     return;
   }
+  if (password.value.length < 6) {
+    authStore.error = '密码至少需要6位';
+    return;
+  }
+  
+  // !!! 重点修改这里 !!!
+  // 组装数据时，使用与后端 DTO 匹配的下划线命名
+  const registerData: RegisterDto = {
+    username: username.value,
+    password: password.value,
+    email: email.value,
+    phone_number: phoneNumber.value, // <-- 使用 ref 变量的值，但字段名匹配后端
+    full_name: fullName.value,      // <-- 使用 ref 变量的值，但字段名匹配后端
+    user_type: userType.value,      // <-- 使用 ref 变量的值，但字段名匹配后端
+  };
 
-  loading.value = true;
   try {
-    const registerPayload: RegisterRestaurantDto = { // 将数据类型明确为 RegisterRestaurantDto
-      user: {
-        username: identifier.value,
-        password: password.value,
-        // --- 修正：后端必填但前端模板无输入，提供默认值 ---
-        // 邮箱格式验证很重要，这里用一个通用格式，实际应让用户输入
-        email: `merchant_${identifier.value}@example.com`,
-        // 手机号格式验证也很重要，这里用一个中国区手机号格式，实际应让用户输入
-        // 假设 identifier 如果是数字且长度为11位，则作为手机号，否则给个默认值
-        phone_number: /^\d{11}$/.test(identifier.value) ? identifier.value : '13812345678',
-        user_type: UserType.RESTAURANT_ADMIN, // 明确使用后端定义的 RESTAURANT_ADMIN
-        full_name: restaurantName.value || '商家管理员', // 提供一个默认姓名
-        // --- 修正结束 ---
-      },
-      restaurant: {
-        restaurant_name: restaurantName.value,
-        description: restaurantDescription.value, // description 在后端是可选的
-        address: restaurantAddress.value,
-        phone_number: restaurantPhone.value, // 对应后端 RestaurantDataDto 的 phone_number
-        // --- 修正：后端必填但前端模板无输入，提供默认值 ---
-        opening_hours: '每日 09:00 - 22:00', // 营业时间是必填的
-        // --- 修正结束 ---
-      },
-    };
-
-    // --- 关键修正：直接使用 authService 调用 API ---
-    await authService.registerRestaurant(registerPayload);
-
-    alert('注册成功，请登录！');
+    await authStore.register(registerData);
+    alert('注册成功！请登录。');
     router.push('/login');
   } catch (err: any) {
-    // 捕获并显示更具体的错误信息，特别是后端返回的错误消息
-    if (err.response && err.response.data && err.response.data.message) {
-      // 后端返回的错误消息通常在 err.response.data.message
-      error.value = err.response.data.message;
-      console.error('Registration failed with backend error:', err.response.data);
-    } else {
-      error.value = err.message || '注册失败，请检查网络或重试。';
-      console.error('Registration error:', err);
-    }
-  } finally {
-    loading.value = false;
+    console.error('注册组件捕获到错误:', err);
   }
 };
 </script>
 
 <style scoped>
-/* 样式部分保持不变，直接复制您提供的样式 */
-.register-container {
-  max-width: 500px;
+/* 样式部分保持不变 */
+.auth-container {
+  max-width: 400px;
   margin: 50px auto;
   padding: 30px;
-  border: 1px solid #eee;
+  border: 1px solid #ddd;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  background-color: white;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  background-color: #fff;
 }
 
 h2 {
@@ -179,60 +125,56 @@ h2 {
   margin-bottom: 25px;
 }
 
-form {
-  display: flex;
-  flex-direction: column;
-}
-
 .form-group {
   margin-bottom: 15px;
-  text-align: left;
 }
 
 label {
   display: block;
   margin-bottom: 8px;
-  font-weight: bold;
   color: #555;
+  font-weight: bold;
 }
 
 input[type="text"],
 input[type="password"],
 input[type="email"],
 input[type="tel"],
-textarea {
+select {
   width: calc(100% - 20px);
-  padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
   font-size: 16px;
   box-sizing: border-box;
 }
 
-textarea {
-  resize: vertical; /* Allow vertical resizing */
-  min-height: 80px;
-}
-
 button {
-  background-color: #42b983;
+  width: 100%;
+  padding: 12px;
+  background-color: #007bff;
   color: white;
-  padding: 12px 20px;
   border: none;
-  border-radius: 6px;
-  cursor: pointer;
+  border-radius: 4px;
   font-size: 18px;
-  margin-top: 15px;
+  cursor: pointer;
   transition: background-color 0.3s ease;
 }
 
 button:hover:not(:disabled) {
-  background-color: #368e6b;
+  background-color: #0056b3;
 }
 
 button:disabled {
   background-color: #cccccc;
   cursor: not-allowed;
+}
+
+.error-message {
+  color: #dc3545;
+  text-align: center;
+  margin-top: 15px;
+  font-size: 14px;
 }
 
 p {
@@ -241,20 +183,12 @@ p {
   color: #666;
 }
 
-p a {
+a {
   color: #007bff;
   text-decoration: none;
-  font-weight: bold;
 }
 
-p a:hover {
+a:hover {
   text-decoration: underline;
-}
-
-.error-message {
-  color: #dc3545;
-  text-align: center;
-  margin-top: 15px;
-  font-weight: bold;
 }
 </style>

@@ -1,55 +1,36 @@
-/* chanleme_merchant_app/src/assets/main.css */
+/* frontend/chanleme_merchant_app/src/assets/styles/main.css */
+
+/* 您可以在这里添加更多全局样式，例如重置样式、字体等 */
 body {
-  font-family: 'Arial', sans-serif;
   margin: 0;
   padding: 0;
-  background-color: #f4f7f6; /* 浅灰色背景 */
-  color: #333;
-  line-height: 1.6;
+  background-color: #f4f4f4;
+  font-family: sans-serif;
 }
 
-#app {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
+/* 常用布局 */
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-h1, h2, h3, h4, h5, h6 {
-  color: #333;
-  margin-top: 0;
-  margin-bottom: 0.5em;
+/* 基础卡片样式 */
+.card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  background-color: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-p {
-  margin-bottom: 1em;
-}
-
-button {
-  cursor: pointer;
-}
-
-/* 基本表单元素样式 */
-input[type="text"],
-input[type="password"],
-input[type="email"],
-input[type="tel"],
-textarea {
-  padding: 10px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  width: 100%;
-  box-sizing: border-box; /* 确保内边距和边框包含在宽度内 */
-  font-size: 16px;
-  margin-bottom: 10px;
-}
-
-/* 链接样式 */
-a {
-  color: #007bff;
-  text-decoration: none;
-}
-
-a:hover {
-  text-decoration: underline;
+/* 按钮组 */
+.button-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
 }

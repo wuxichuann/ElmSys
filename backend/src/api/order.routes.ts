@@ -52,7 +52,62 @@ const createOrderHandler: RequestHandler = async (req: AuthenticatedRequest, res
     }
 };
 
+/**
 
+ * 处理获取当前登录用户所有订单列表的请求。
+   */
+const getUserOrdersHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        // 从 authMiddleware 中安全地获取用户ID
+        const userId = req.user.userId;
+        if (!userId) {
+            res.status(401).json({ message: '无法获取用户信息，请重新登录' });
+            return;
+        }
+
+        const orders = await orderService.getOrdersByCustomerId(userId);
+        res.status(200).json(orders);
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+
+ * 处理获取当前登录用户单个订单详情的请求。
+   */
+const getOrderDetailsHandler: RequestHandler = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        // 从 authMiddleware 中安全地获取用户ID
+        const userId = req.user.userId;
+        if (!userId) {
+            res.status(401).json({ message: '无法获取用户信息，请重新登录' });
+            return;
+        }
+
+
+        // 从 URL 路径参数中获取订单ID
+        const orderId = parseInt(req.params.id, 10);
+        if (isNaN(orderId)) {
+            res.status(400).json({ message: '无效的订单ID格式' });
+            return;
+        }
+
+        const orderDetails = await orderService.getOrderDetailsForCustomer(userId, orderId);
+
+        if (!orderDetails) {
+            // 如果查询结果为空，说明订单不存在，或者该订单不属于当前用户
+            res.status(404).json({ message: '订单未找到或您无权查看' });
+            return;
+        }
+
+        res.status(200).json(orderDetails);
+
+    } catch (error) {
+        next(error);
+    }
+};
 // --- 商家端 Handlers ---
 /**
  * 处理商家获取新订单列表的请求。【用于“新订单”页】
@@ -256,7 +311,31 @@ const deliverOrderHandler: RequestHandler = async (req: AuthenticatedRequest, re
  * @returns {object} 401 - 用户未认证。
  */
 router.post('/', authMiddleware, createOrderHandler);
+// --- 用户查询订单路由 (新增部分) ---
 
+/**
+
+ * @route   GET /api/orders/my-orders
+ * @group   Orders - 用户订单
+ * @description 获取当前登录用户的所有历史订单列表。
+ * @access  Private (Customer)
+ * @returns {Array<object>} 200 - 用户的订单列表。
+ * @returns {object} 401 - 用户未认证。
+   */
+router.get('/my-orders', authMiddleware, getUserOrdersHandler);
+
+/**
+
+ * @route   GET /api/orders/:id
+ * @group   Orders - 用户订单
+ * @description 获取当前登录用户的单个订单详情。
+ * @access  Private (Customer)
+ * @param {integer} id.path.required - 订单的ID.
+ * @returns {object} 200 - 订单的详细信息。
+ * @returns {object} 401 - 用户未认证。
+ * @returns {object} 404 - 订单未找到或用户无权查看。
+   */
+router.get('/:id', authMiddleware, getOrderDetailsHandler);
 
 // --- 商家订单管理路由 ---
 const isRestaurantAdmin = [authMiddleware, checkRole(UserType.RESTAURANT_ADMIN)];

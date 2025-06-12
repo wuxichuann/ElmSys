@@ -87,7 +87,18 @@ export class OrderService {
                     },
                 },
                 // 在返回结果中包含订单的详细商品信息
-                include: {
+                select: {
+                    order_id: true,
+                    customer_id: true,
+                    restaurant_id: true,
+                    delivery_address: true,
+                    total_amount: true,
+                    status: true,
+                    payment_method: true,
+                    payment_status: true,
+                    notes: true,
+                    created_at: true,
+                    estimated_delivery_at: true,
                     order_items: true,
                 },
             });
@@ -526,43 +537,84 @@ export class OrderService {
      * 实际业务中，可以根据地理位置、骑手评分等进行筛选，这里做简化处理。
      * @returns 返回可接订单列表，包含详细的取餐和送餐信息。
      */
-    public async getAvailableOrdersForRider() {
-        return prisma.orders.findMany({
-            // 1.筛选条件：
-            where: {
-                // 此处状态应改为 'ready_for_pickup'，以匹配商家“餐品已备好”的最终状态。
-                status: 'ready_for_pickup',
-                courier_id: null, // 关键条件：订单尚未被任何骑手接取
-            },
-            // 2.前端展示：
-            select: {
-                order_id: true,
-                total_amount: true,
-                created_at: true,
-                notes: true,
+    // public async getAvailableOrdersForRider() {
+    //     return prisma.orders.findMany({
+    //         // 1.筛选条件：
+    //         where: {
+    //             // 此处状态应改为 'ready_for_pickup'，以匹配商家“餐品已备好”的最终状态。
+    //             status: 'ready_for_pickup',
+    //             courier_id: null, // 关键条件：订单尚未被任何骑手接取
+    //         },
+    //         // 2.前端展示：
+    //         select: {
+    //             order_id: true,
+    //             total_amount: true,
+    //             created_at: true,
+    //             notes: true,
 
-                delivery_address: true, // 送餐地址
-                restaurants: { // 包含关联的餐厅信息
-                    select: {
-                        restaurant_name: true,
-                        address: true, // 取餐地址
-                        phone_number: true,
+    //             delivery_address: true, // 送餐地址
+    //             restaurants: { // 包含关联的餐厅信息
+    //                 select: {
+    //                     restaurant_name: true,
+    //                     address: true, // 取餐地址
+    //                     phone_number: true,
+    //                 }
+    //             },
+
+    //             users_orders_customer_idTousers: {// 包含关联的顾客信息
+    //                 select: {
+    //                     full_name: true,
+    //                     phone_number: true // 直接返回了用户的完整电话
+    //                 }
+    //             }
+
+    //         },
+    //         orderBy: {
+    //             created_at: 'asc', // 优先展示最早创建的订单
+    //         },
+    //     });
+    // }
+    public async getAvailableOrdersForRider() {
+        try {
+            console.log('OrderService: 开始查询可用订单...'); // 添加日志
+            const orders = await prisma.orders.findMany({
+                where: {
+                    status: 'ready_for_pickup',
+                    courier_id: null,
+                },
+                select: {
+                    order_id: true,
+                    total_amount: true,
+                    created_at: true,
+                    notes: true,
+                    delivery_address: true,
+                    restaurants: { // 包含关联的餐厅信息
+                        select: {
+                            restaurant_name: true,
+                            address: true,
+                            phone_number: true,
+                        }
+                    },
+                    users_orders_customer_idTousers: {// 包含关联的顾客信息
+                        select: {
+                            full_name: true,
+                            phone_number: true
+                        }
                     }
                 },
-
-                users_orders_customer_idTousers: {// 包含关联的顾客信息
-                    select: {
-                        full_name: true,
-                        phone_number: true // 直接返回了用户的完整电话
-                    }
-                }
-
-            },
-            orderBy: {
-                created_at: 'asc', // 优先展示最早创建的订单
-            },
-        });
+                orderBy: {
+                    created_at: 'asc',
+                },
+            });
+            console.log('OrderService: 成功查询到可用订单，数量:', orders.length); // 添加日志
+            return orders;
+        } catch (error) {
+            console.error('OrderService: 获取可用订单时发生错误:', error); // 详细记录错误
+            // 重新抛出错误，以便在控制器层被捕获和处理
+            throw new Error(`Failed to get available orders for rider: ${error.message || error}`);
+        }
     }
+
 
     /**
      * @description 骑手接取订单，将订单状态从“ready_for_pickup”改为“out_for_pickup”
